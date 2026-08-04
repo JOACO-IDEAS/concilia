@@ -1,0 +1,6 @@
+# No subir archivos .env locales en el deploy — las variables de entorno
+# reales (ej. DATABASE_URL) se configuran en Vercel (vercel env add / UI),
+# no vía un archivo .env local.
+.env
+.env.local
+.env.*.local
