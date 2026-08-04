@@ -1,0 +1,341 @@
+// ============================================================================
+// ConcilIA — Módulo de Administración, Contactos y Facturación
+// ============================================================================
+//
+// Mapa de entidades y relaciones:
+//
+//   Administrator  ──M:N──  Organization  ──M:N──  Contact
+//        (via OrganizationAdministrator)   (via ContactOrganization)
+//                              │
+//                              ├──1:N── ContactChannel   (mails/teléfonos de cobranza y notificaciones)
+//                              └──1:N── BillingProfile   (datos fiscales y bancarios)
+//
+// - Un Administrator (ej. "Estudio Fernández Administraciones") gestiona una o
+//   varias Organization (consorcios/edificios/empresas — el "cliente" del SaaS).
+// - Un Contact (persona física) puede estar vinculado a varias Organization a
+//   la vez (ej. un contador que atiende varios consorcios). La marca de
+//   "contacto primario" vive en la tabla intermedia ContactOrganization, no en
+//   Contact, porque una misma persona puede ser el contacto principal de un
+//   consorcio y secundario en otro — es una propiedad de la relación, no de
+//   la persona.
+// - ContactChannel modela cualquier canal de comunicación (email/teléfono/
+//   WhatsApp) usado para cobranzas o notificaciones. Puede pertenecer a un
+//   Contact puntual o ser un canal genérico de la Organization (ej. una
+//   casilla compartida "facturacion@consorcio.com" que no es de una persona).
+// - BillingProfile guarda los datos fiscales/bancarios. Es 1:N (no 1:1) para
+//   soportar organizaciones con más de una cuenta/moneda; `isDefault` marca
+//   cuál se usa por defecto.
+// - PaymentTransaction (Fase 3): eventos de cobro recibidos por webhook desde
+//   proveedores de Open Banking (Belvo/Prometeo/Pluggy/pasarelas). Cada uno
+//   apunta opcionalmente a una Organization (N:1) — null mientras esté
+//   UNMATCHED, esperando vínculo manual.
+//
+// Generado con Prisma 7 (generator "prisma-client" + driver adapter para
+// PostgreSQL). Ver src/lib/prisma.ts para la instancia del cliente.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  // La URL de conexión NO vive acá en Prisma 7 — se configura en
+  // prisma.config.ts (leída desde la env var DATABASE_URL).
+  provider = "postgresql"
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ContactChannelType {
+  EMAIL
+  PHONE
+  WHATSAPP
+}
+
+enum ContactChannelPurpose {
+  BILLING // usado para el envío de facturas / cadena de cobranza
+  NOTIFICATIONS // avisos operativos (vencimientos, alertas, etc.)
+  GENERAL
+}
+
+enum BankAccountType {
+  CBU
+  IBAN
+  ALIAS
+  OTHER
+}
+
+enum PaymentTransactionStatus {
+  PENDING // recibido, todavía no pasó por el motor de reconciliación
+  MATCHED // se encontró una Organization dueña del pago
+  UNMATCHED // no se encontró ninguna coincidencia — requiere vínculo manual
+}
+
+// Cómo se llegó a MATCHED — usado por el dashboard de analítica para calcular
+// la "tasa de reconciliación automática" (AUTO = lo resolvió el motor de
+// reconcile-payment.ts al recibir el webhook; MANUAL = lo vinculó a mano un
+// administrador desde la pestaña Webhooks de /conciliacion). Null mientras el
+// pago no esté MATCHED.
+enum PaymentMatchMethod {
+  AUTO
+  MANUAL
+}
+
+enum ReminderChannel {
+  WHATSAPP
+  EMAIL
+}
+
+// ----------------------------------------------------------------------------
+// Administrator — el actor que gestiona una o varias Organization.
+// ----------------------------------------------------------------------------
+model Administrator {
+  id    String @id @default(cuid())
+  name  String
+  email String @unique
+
+  organizations OrganizationAdministrator[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activo
+
+  @@index([email])
+  @@map("administrators")
+}
+
+// Tabla intermedia N:M entre Administrator y Organization.
+// Un administrador puede gestionar varias organizaciones y (a futuro) una
+// organización podría tener más de un administrador asignado (ej. un equipo).
+model OrganizationAdministrator {
+  id              String   @id @default(cuid())
+  administratorId String
+  organizationId  String
+  createdAt       DateTime @default(now())
+
+  administrator Administrator @relation(fields: [administratorId], references: [id], onDelete: Cascade)
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Un mismo administrador no puede estar vinculado dos veces a la misma organización.
+  @@unique([administratorId, organizationId])
+  @@index([organizationId])
+  @@map("organization_administrators")
+}
+
+// ----------------------------------------------------------------------------
+// Organization — el "cliente" del SaaS (consorcio / edificio / empresa).
+// ----------------------------------------------------------------------------
+model Organization {
+  id String @id @default(cuid())
+
+  name      String // nombre comercial / display (ej. "Consorcio Av. Cabildo 2450")
+  legalName String // razón social
+  taxId     String // CUIT / RUT / RFC según el país
+
+  address String
+  status  OrganizationStatus @default(ACTIVE)
+
+  administrators      OrganizationAdministrator[]
+  contacts            ContactOrganization[]
+  channels            ContactChannel[]
+  billingProfiles     BillingProfile[]
+  paymentTransactions PaymentTransaction[]
+  paymentReminders    PaymentReminder[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activa
+
+  // Evita duplicar el mismo tax_id como dos organizaciones distintas.
+  // Nota: hoy es única a nivel global porque este SaaS opera con un único
+  // tenant (un Administrator central). Si en el futuro se soporta multi-tenant
+  // real (varios estudios administradores no relacionados compartiendo la
+  // misma base), reemplazar por un unique compuesto (tenantId, taxId).
+  @@unique([taxId])
+  @@index([status])
+  @@map("organizations")
+}
+
+// ----------------------------------------------------------------------------
+// Contact — persona física vinculada a una o varias Organization.
+// ----------------------------------------------------------------------------
+model Contact {
+  id String @id @default(cuid())
+
+  firstName String
+  lastName  String
+  jobTitle  String? // cargo / rol (ej. "Contador", "Presidente del consorcio")
+
+  organizations ContactOrganization[]
+  channels      ContactChannel[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activo
+
+  @@index([lastName, firstName])
+  @@map("contacts")
+}
+
+// Tabla intermedia N:M entre Contact y Organization.
+// `isPrimaryContact` vive acá (no en Contact) porque es una propiedad de la
+// relación: la misma persona puede ser contacto principal de un consorcio y
+// secundario en otro.
+model ContactOrganization {
+  id               String   @id @default(cuid())
+  contactId        String
+  organizationId   String
+  isPrimaryContact Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Un mismo contacto no puede vincularse dos veces a la misma organización.
+  @@unique([contactId, organizationId])
+  @@index([organizationId])
+  @@map("contact_organizations")
+}
+
+// ----------------------------------------------------------------------------
+// ContactChannel — cadena de comunicación (email/teléfono/WhatsApp) para
+// cobranzas o notificaciones. Siempre pertenece a una Organization; puede
+// además estar asociado a un Contact puntual, o ser un canal genérico de la
+// organización (ej. una casilla compartida de facturación).
+// ----------------------------------------------------------------------------
+model ContactChannel {
+  id String @id @default(cuid())
+
+  organizationId String
+  contactId      String? // opcional: null = canal genérico de la organización
+
+  type       ContactChannelType
+  value      String // el email / número de teléfono en sí
+  purpose    ContactChannelPurpose @default(GENERAL)
+  isVerified Boolean               @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activo
+
+  // Evita cargar el mismo canal duplicado para la misma organización.
+  @@unique([organizationId, type, value])
+  @@index([organizationId])
+  @@index([contactId])
+  @@index([value])
+  @@index([organizationId, purpose])
+  @@map("contact_channels")
+}
+
+// ----------------------------------------------------------------------------
+// BillingProfile — datos fiscales y bancarios de una Organization.
+// Es 1:N (no 1:1): la mayoría de las organizaciones tendrán un solo perfil,
+// pero el modelo soporta más de una cuenta/moneda por organización.
+// `isDefault` marca cuál se usa por defecto al facturar.
+// ----------------------------------------------------------------------------
+model BillingProfile {
+  id             String @id @default(cuid())
+  organizationId String
+
+  taxCondition      String // ej. "Responsable Inscripto", "Monotributo" (texto libre: varía por país)
+  bankAccountType   BankAccountType
+  bankAccountNumber String // CBU / IBAN / Alias, según bankAccountType
+  billingCurrency   String          @default("ARS") // código ISO 4217 (ARS, USD, ...)
+  paymentTerms      String // ej. "30 días", "Contado"
+  isDefault         Boolean         @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activo
+
+  @@index([organizationId])
+  @@map("billing_profiles")
+}
+
+// ----------------------------------------------------------------------------
+// PaymentTransaction — un evento de cobro recibido por webhook desde un
+// proveedor de Open Banking / pasarela de pagos (Belvo, Prometeo, Pluggy,
+// etc. — ver src/app/api/v1/webhooks/payments/route.ts).
+//
+// El motor de reconciliación (src/lib/payments/reconcile-payment.ts) intenta
+// vincular cada pago a una Organization por CUIT (`Organization.taxId`) o por
+// CBU/Alias (`BillingProfile.bankAccountNumber`) usando `payerIdentifier`.
+// Si no encuentra nada, queda en UNMATCHED para vincular a mano desde la
+// pestaña "Webhooks" de /conciliacion.
+// ----------------------------------------------------------------------------
+model PaymentTransaction {
+  id String @id @default(cuid())
+
+  // Id que asigna el proveedor externo a la transacción — es la clave de
+  // idempotencia: un mismo `externalId` nunca genera dos registros, aunque el
+  // proveedor reintente el webhook (algo común y esperado en estas APIs).
+  externalId String @unique
+
+  provider String // ej. "belvo" | "prometeo" | "pluggy" | "generic" — texto libre, no enum, porque la lista de proveedores crece
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("ARS") // código ISO 4217
+
+  // CUIT/RUT o CBU/Alias tal como vino en el payload — es lo que usa el
+  // motor de reconciliación para buscar la Organization, y lo que se le
+  // muestra al administrador para vincular a mano si quedó UNMATCHED.
+  payerIdentifier String?
+  concept         String? // referencia / concepto del pago, si el proveedor lo manda
+
+  status      PaymentTransactionStatus @default(PENDING)
+  matchedAt   DateTime? // se completa cuando status pasa a MATCHED (automático o manual)
+  matchMethod PaymentMatchMethod? // AUTO (motor de reconciliación) o MANUAL (vínculo a mano) — null mientras no esté MATCHED
+
+  rawPayload Json // payload crudo tal como llegó — para auditoría y debugging
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([payerIdentifier])
+  @@map("payment_transactions")
+}
+
+// ----------------------------------------------------------------------------
+// PaymentReminder — Módulo de Morosidad: historial de recordatorios de
+// cobranza enviados a una Organization. No hay un modelo de expensas/deuda
+// emitida en este schema todavía (ver src/lib/delinquency/detect-overdue.ts
+// para la heurística de "en mora" que se calcula a partir de esto) — este
+// modelo existe puramente como guarda anti-spam: no se manda un nuevo
+// recordatorio si ya se envió uno dentro de la ventana de cooldown
+// (REMINDER_COOLDOWN_DAYS), y como auditoría de qué se le dijo a cada
+// organización y cuándo.
+// ----------------------------------------------------------------------------
+model PaymentReminder {
+  id             String @id @default(cuid())
+  organizationId String
+
+  channel     ReminderChannel
+  amountDue   Decimal         @db.Decimal(14, 2) // monto estimado al momento del envío — auditoría, no se recalcula retroactivamente
+  daysOverdue Int
+
+  sentAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, sentAt])
+  @@map("payment_reminders")
+}
