@@ -24,3 +24,89 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes conciliia-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes conciliia-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes conciliia-flash {
+  0% {
+    background-color: rgba(16, 185, 129, 0.22);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes conciliia-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: conciliia-fade-in-up 380ms ease-out both;
+}
+
+.animate-conciliia-pop {
+  animation: conciliia-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-conciliia-flash {
+  animation: conciliia-flash 1000ms ease-out both;
+}
+
+.animate-toast-in {
+  animation: conciliia-toast-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-conciliia-pop,
+  .animate-conciliia-flash,
+  .animate-toast-in {
+    animation: none;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
