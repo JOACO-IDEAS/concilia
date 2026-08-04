@@ -1,0 +1,8 @@
+<svg width="168" height="48" viewBox="0 0 168 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="concilia-logo-dark-title">
+  <title id="concilia-logo-dark-title">Logo ConcilIA</title>
+  <path d="M31.5 37 A15 15 0 1 1 31.5 11" fill="none" stroke="#3B82F6" stroke-width="6" stroke-linecap="round"/>
+  <path d="M16 25 L21 30 L33 16" fill="none" stroke="#F8FAFC" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="52" y="31" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#F8FAFC">
+    <tspan font-weight="500">Concil</tspan><tspan font-weight="800">IA</tspan>
+  </text>
+</svg>
