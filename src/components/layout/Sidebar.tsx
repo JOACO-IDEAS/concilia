@@ -12,7 +12,9 @@ import {
   Home,
   FileBarChart,
   UploadCloud,
+  Sparkles,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useMobileNav } from "@/lib/mobile-nav";
@@ -20,7 +22,18 @@ import { planParaUso } from "@/lib/plans";
 import { formatARS } from "@/lib/format";
 import { Logo } from "./Logo";
 
-const navItems = [
+// Centro de Control primero y destacado — es la nueva puerta de entrada
+// "Cero Ficción" (entrada de datos + bandeja de IA + cobranza en un solo
+// lugar). El resto de la navegación queda igual, sin romper nada existente.
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  destacado?: boolean;
+}
+
+const navItems: NavItem[] = [
+  { href: "/centro-de-control", label: "Centro de Control", icon: Sparkles, destacado: true },
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard", label: "Analítica", icon: BarChart3 },
   { href: "/consorcios", label: "Consorcios", icon: Building2 },
@@ -45,23 +58,29 @@ function BrandHeader() {
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
     <nav className="flex-1 space-y-1 px-3 py-2">
-      {navItems.map((item) => {
+      {navItems.map((item, i) => {
         const isActive = pathname === item.href;
         const Icon = item.icon;
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-              isActive
-                ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-            }`}
-          >
-            <Icon size={18} strokeWidth={2} />
-            {item.label}
-          </Link>
+          <div key={item.href}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? item.destacado
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
+                  : item.destacado
+                    ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+              }`}
+            >
+              <Icon size={18} strokeWidth={2} />
+              {item.label}
+            </Link>
+            {i === 0 ? <div className="my-2 border-t border-slate-100 dark:border-slate-800" /> : null}
+          </div>
         );
       })}
     </nav>
