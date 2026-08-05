@@ -56,14 +56,16 @@ export function StatementIngestionPanel() {
     formData.set("file", archivo);
 
     // Red de seguridad del lado del cliente: pase lo que pase en el servidor
-    // (timeout de IA colgado, cold start, lo que sea), la UI nunca debe
-    // quedar atascada en "Leyendo el extracto…" más de 30s.
+    // (la IA colgada, cold start, lo que sea), la UI nunca debe quedar
+    // atascada más de 45s — un poco por encima del timeout de 40s del
+    // servidor, para que sea ese el que dispare primero con su propio
+    // mensaje de error.
     let venciTimeout = false;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
         venciTimeout = true;
         reject(new Error("timeout"));
-      }, 30000);
+      }, 45000);
     });
 
     let r;
@@ -73,7 +75,7 @@ export function StatementIngestionPanel() {
       setEstado("idle");
       setError(
         venciTimeout
-          ? "El archivo tardó demasiado en procesarse. Probá de nuevo o con otro archivo."
+          ? "La IA tardó demasiado en analizar el archivo. Probá de nuevo en unos segundos."
           : "No se pudo leer el archivo."
       );
       return;
@@ -236,7 +238,7 @@ export function StatementIngestionPanel() {
             <>
               <Loader2 size={26} className="animate-spin text-blue-600 dark:text-blue-400" />
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Leyendo el extracto…
+                IA analizando formato del banco…
               </p>
             </>
           ) : (

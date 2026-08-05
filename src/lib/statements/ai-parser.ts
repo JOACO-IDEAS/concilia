@@ -1,18 +1,14 @@
 import { z } from "zod";
-import {
-  extraerTextoPDF,
-  extraerMovimientosDeTexto,
-  generarExternalId,
-  type MovimientoExtraidoPDF,
-} from "./parse-pdf-statement";
-import { parsearCSVLocal } from "./parse-csv-statement";
+import { extraerTextoPDF, generarExternalId, type MovimientoExtraidoPDF } from "./parse-pdf-statement";
 
 // ----------------------------------------------------------------------------
 // Parser universal de extractos (PDF/imagen/CSV) vía LLM con Structured
-// Output — punto de extensión mencionado en parse-pdf-statement.ts. Cuando
-// no hay una API key de IA configurada, degrada al parser heurístico local
-// (solo funciona para PDF/CSV con texto real — una imagen sin IA no tiene
-// fallback posible, ver `parseStatementWithAI` más abajo).
+// Output. Decisión de producto explícita: TODO documento pasa por la IA para
+// ser estandarizado, sin importar el formato ni qué tan desprolijo esté — un
+// parser local estricto (columnas de CSV predefinidas, regex de texto) que
+// rechace un documento válido rompe la promesa de valor ("la IA hace el
+// trabajo sucio"). Si la IA no está configurada o falla, se devuelve un error
+// claro en vez de degradar en silencio a un heurístico de menor calidad.
 // ----------------------------------------------------------------------------
 
 const TransaccionIASchema = z.object({
@@ -54,8 +50,8 @@ const TAMANO_MAXIMO_DOCUMENTO_BYTES = 8 * 1024 * 1024; // 8MB — PDF/CSV
 const TAMANO_MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024; // 5MB — el payload base64 infla ~33% sobre esto
 const MAX_CHARS_TEXTO_A_IA = 20000; // ~5-6k tokens — cubre extractos de varios meses sin disparar costo/latencia
 const MAX_OUTPUT_TOKENS = 8000;
-const DEFAULT_MODEL = "gpt-4o-mini";
-const TIMEOUT_IA_MS = 20000; // la UI nunca debe quedar colgada esperando al LLM — a los 20s se corta y se usa el fallback local
+const DEFAULT_MODEL = "gpt-4o-mini"; // modelo chico/rápido a propósito — sin este no hay fallback local, así que la latencia importa
+const TIMEOUT_IA_MS = 40000; // tope duro del lado del servidor; la UI tiene su propia red de seguridad de 45s por encima de esto
 
 const MIME_A_TIPO: Record<string, TipoArchivoExtracto> = {
   "application/pdf": "pdf",
@@ -100,7 +96,9 @@ function obtenerConfigIA(): ConfigIA | null {
   return configMemo;
 }
 
-const SYSTEM_PROMPT = `Sos un motor de extracción de datos para extractos bancarios y de billeteras virtuales de cualquier entidad financiera de LATAM (bancos, Mercado Pago, Nubank, billeteras, etc.), en cualquier formato (PDF, imagen o CSV).
+const SYSTEM_PROMPT = `Sos un experto procesando extractos bancarios argentinos (y del resto de LATAM: bancos tradicionales, Mercado Pago, Nubank, billeteras virtuales, etc.), en cualquier formato — PDF, imagen o CSV.
+
+Vas a recibir texto desestructurado (a veces mal extraído de un PDF o una imagen escaneada) o CSVs mal formateados: columnas en cualquier orden, separadores inconsistentes, encabezados en cualquier idioma, texto pegado, saltos de línea raros. Nunca rechaces un documento por estar desprolijo — encontrá las fechas, descripciones, montos y referencias donde sea que estén, ignorando la basura decorativa (títulos, totales, leyendas legales, pies de página), y devolvé SIEMPRE un JSON estandarizado. Para eso existís.
 
 Devolvé ÚNICAMENTE los movimientos reales de la cuenta (no encabezados, totales, ni texto decorativo). Para cada movimiento:
 - "date": fecha en formato ISO estricto YYYY-MM-DD.
@@ -162,54 +160,14 @@ function truncarTexto(texto: string): string {
   return texto.slice(0, MAX_CHARS_TEXTO_A_IA);
 }
 
-/** Heurístico local como fallback — solo puede leer PDF (vía extracción de texto). */
-async function parsearConHeuristicoLocal(
-  buffer: Buffer,
-  tipo: TipoArchivoExtracto
-): Promise<ResultadoParserIA> {
-  if (tipo === "image") {
-    return {
-      ok: false,
-      usedAI: false,
-      bankName: null,
-      accountIdentifier: null,
-      transactions: [],
-      error:
-        "Las imágenes requieren IA configurada (OPENAI_API_KEY) — no hay un parser local que pueda leer píxeles.",
-    };
-  }
-
-  const texto = tipo === "pdf" ? await extraerTextoPDF(buffer) : buffer.toString("utf-8");
-  const movimientos = extraerMovimientosDeTexto(texto);
-
-  return {
-    ok: movimientos.length > 0,
-    usedAI: false,
-    bankName: null,
-    accountIdentifier: null,
-    transactions: movimientos.map(
-      (m): TransaccionIA => ({
-        date: m.fecha,
-        amount: m.esEgreso ? -m.amount : m.amount,
-        concept: m.concept,
-        payerIdentifier: m.payerIdentifier,
-        referenceNumber: null,
-      })
-    ),
-    error:
-      movimientos.length === 0
-        ? "No se detectó ningún movimiento reconocible con el parser local (sin IA configurada)."
-        : undefined,
-  };
-}
-
 /**
  * Parser universal de extractos — PDF, PNG/JPG o CSV, de cualquier entidad
- * financiera. Con `OPENAI_API_KEY` configurada, manda el documento (texto
- * extraído para PDF/CSV, o la imagen para PNG/JPG) a un LLM con Structured
- * Output (JSON Schema estricto generado desde el mismo Zod schema que valida
- * la respuesta). Sin la API key, degrada al parser heurístico local — que
- * solo puede leer PDF/CSV (una imagen no tiene fallback posible sin IA).
+ * financiera. TODO documento pasa siempre por la IA (texto extraído para
+ * PDF/CSV, o la imagen para PNG/JPG) con Structured Output (JSON Schema
+ * estricto generado desde el mismo Zod schema que valida la respuesta) — no
+ * hay atajo local ni validación de columnas que pueda rechazar un documento
+ * válido antes de llegar acá. Si la IA no está configurada o falla, se
+ * devuelve un error claro (nunca un cuelgue ni una degradación silenciosa).
  */
 export async function parseStatementWithAI(
   fileBuffer: Buffer,
@@ -240,26 +198,16 @@ export async function parseStatementWithAI(
     };
   }
 
-  // CSV es una estructura de columnas conocida — nunca hace falta un LLM
-  // para leerlo, así que se intenta local primero SIEMPRE (con o sin IA
-  // configurada). Instantáneo (milisegundos) y evita el viaje de red por
-  // completo en el caso más común de "extracto = export de un banco/billetera".
-  if (tipo === "csv") {
-    const resultadoCSV = parsearCSVLocal(fileBuffer.toString("utf-8"));
-    if (resultadoCSV.ok) {
-      return {
-        ok: true,
-        usedAI: false,
-        bankName: null,
-        accountIdentifier: null,
-        transactions: resultadoCSV.transactions,
-      };
-    }
-  }
-
   const config = obtenerConfigIA();
   if (!config) {
-    return parsearConHeuristicoLocal(fileBuffer, tipo);
+    return {
+      ok: false,
+      usedAI: false,
+      bankName: null,
+      accountIdentifier: null,
+      transactions: [],
+      error: "La IA no está configurada en este entorno (falta OPENAI_API_KEY) — no se puede procesar el extracto.",
+    };
   }
 
   try {
@@ -284,15 +232,6 @@ export async function parseStatementWithAI(
       e
     );
 
-    // Para PDF/CSV todavía queda el heurístico local como red de seguridad
-    // — la UI nunca debe quedar esperando indefinidamente a la IA. Para
-    // imágenes no hay fallback posible (no hay parser de píxeles sin IA),
-    // así que se devuelve el error rápido en vez de colgar la UI.
-    if (tipo !== "image") {
-      const fallback = await parsearConHeuristicoLocal(fileBuffer, tipo);
-      if (fallback.ok) return fallback;
-    }
-
     return {
       ok: false,
       usedAI: true,
@@ -300,10 +239,10 @@ export async function parseStatementWithAI(
       accountIdentifier: null,
       transactions: [],
       error: esTimeout
-        ? "La IA tardó demasiado en procesar el extracto y no se encontró un fallback local. Probá de nuevo o con otro archivo."
+        ? "La IA tardó demasiado en responder. Probá de nuevo en unos segundos."
         : e instanceof Error
-          ? `No se pudo procesar con IA: ${e.message}`
-          : "No se pudo procesar con IA.",
+          ? `No se pudo procesar el extracto con IA: ${e.message}`
+          : "No se pudo procesar el extracto con IA.",
     };
   }
 }
