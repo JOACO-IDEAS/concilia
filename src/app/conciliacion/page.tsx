@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { BarChart3 } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
 import { ConciliacionTabs } from "@/components/conciliacion/ConciliacionTabs";
 import { obtenerPagosWebhook } from "./payments-actions";
@@ -18,6 +20,15 @@ export default async function ConciliacionPage() {
         subtitle="La IA prepara el match con cada Unidad Funcional — vos aprobás en 1 clic"
       />
       <main className="flex-1 p-4 sm:p-6">
+        <div className="mb-4 flex justify-end">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+          >
+            <BarChart3 size={13} />
+            Ver analítica
+          </Link>
+        </div>
         <ConciliacionTabs datosWebhooks={datosWebhooks} />
       </main>
     </>

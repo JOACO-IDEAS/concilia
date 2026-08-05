@@ -3,45 +3,33 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  BarChart3,
-  Landmark,
-  MessageCircleWarning,
-  Building2,
-  Home,
-  FileBarChart,
-  UploadCloud,
-  Inbox,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Building2, X } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useMobileNav } from "@/lib/mobile-nav";
 import { planParaUso } from "@/lib/plans";
 import { formatARS } from "@/lib/format";
 import { Logo } from "./Logo";
 
-// Bandeja de Trabajo primero y destacada — es la puerta de entrada: tu
-// empleado de IA ya hizo el trabajo, acá aprobás lo que necesita tu firma.
-// El resto de la navegación queda igual, sin romper nada existente.
+// Menú del empleado de IA — 7 categorías planas, sin jerarquías ni
+// destacados (ver PRODUCT_BLUEPRINT.md, "Arquitectura de navegación"). Cada
+// una es lo que le pedirías a una asistente administrativa, no un nombre de
+// feature. Las rutas que no entran acá (Dashboard mock, Analítica,
+// Unidades, Importar, Morosidad detallada) siguen vivas y enlazadas desde
+// adentro de la pantalla que corresponde — no se perdió ninguna capacidad.
 interface NavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
-  destacado?: boolean;
+  emoji: string;
 }
 
 const navItems: NavItem[] = [
-  { href: "/bandeja-de-trabajo", label: "Bandeja de Trabajo", icon: Inbox, destacado: true },
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard", label: "Analítica", icon: BarChart3 },
-  { href: "/consorcios", label: "Consorcios", icon: Building2 },
-  { href: "/importar", label: "Importar Datos", icon: UploadCloud },
-  { href: "/unidades", label: "Unidades Funcionales", icon: Home },
-  { href: "/conciliacion", label: "Conciliación Bancaria", icon: Landmark },
-  { href: "/morosidad", label: "Morosidad & WhatsApp", icon: MessageCircleWarning },
-  { href: "/reportes", label: "Reportes", icon: FileBarChart },
+  { href: "/bandeja-de-trabajo", label: "Bandeja de Trabajo", emoji: "🏠" },
+  { href: "/ia", label: "IA", emoji: "🤖" },
+  { href: "/conciliacion", label: "Pagos", emoji: "📥" },
+  { href: "/conversaciones", label: "Conversaciones", emoji: "💬" },
+  { href: "/reportes", label: "Documentos", emoji: "📄" },
+  { href: "/consorcios", label: "Consorcios", emoji: "🏢" },
+  { href: "/configuracion", label: "Configuración", emoji: "⚙️" },
 ];
 
 function BrandHeader() {
@@ -57,30 +45,25 @@ function BrandHeader() {
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
-    <nav className="flex-1 space-y-1 px-3 py-2">
-      {navItems.map((item, i) => {
+    <nav className="flex-1 space-y-0.5 px-3 py-2">
+      {navItems.map((item) => {
         const isActive = pathname === item.href;
-        const Icon = item.icon;
         return (
-          <div key={item.href}>
-            <Link
-              href={item.href}
-              onClick={onNavigate}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? item.destacado
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
-                  : item.destacado
-                    ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              }`}
-            >
-              <Icon size={18} strokeWidth={2} />
-              {item.label}
-            </Link>
-            {i === 0 ? <div className="my-2 border-t border-slate-100 dark:border-slate-800" /> : null}
-          </div>
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              isActive
+                ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            }`}
+          >
+            <span className="text-base leading-none" aria-hidden="true">
+              {item.emoji}
+            </span>
+            {item.label}
+          </Link>
         );
       })}
     </nav>

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/Toast";
 import { ejecutarReclamadorAutomatico, type ListaMorosidadResultado } from "@/app/morosidad/actions";
 import { formatMonto } from "@/lib/format";
-import { MessageCircle, Loader2, Clock, Wallet, DatabaseZap, CircleCheck } from "lucide-react";
+import { MessageCircle, Loader2, Clock, Wallet, DatabaseZap, CircleCheck, ArrowRight } from "lucide-react";
 
 /**
  * Pregunta 3 de la Bandeja de Trabajo — "¿Qué puedo ejecutar ahora?": un
@@ -55,7 +56,20 @@ export function CobranzaMoraCard({ datosIniciales }: { datosIniciales: ListaMoro
 
   return (
     <Card className="animate-fade-in-up">
-      <CardHeader title="Cobranza de mora" subtitle="Organizaciones con saldos vencidos" />
+      <CardHeader
+        title="Cobranza de mora"
+        subtitle="Organizaciones con saldos vencidos"
+        action={
+          organizaciones.length > 0 ? (
+            <Link
+              href="/morosidad"
+              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Ver detalle <ArrowRight size={12} />
+            </Link>
+          ) : null
+        }
+      />
       <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
         <div>
           <p className="flex items-center justify-center gap-1 text-xs text-slate-500 dark:text-slate-400 sm:justify-start">
