@@ -75,6 +75,7 @@ export async function enviarMensajeWhatsApp(
           type: "text",
           text: { body: mensaje, preview_url: false },
         }),
+        signal: AbortSignal.timeout(15000),
       }
     );
 

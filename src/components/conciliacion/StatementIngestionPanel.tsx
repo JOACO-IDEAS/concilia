@@ -54,7 +54,31 @@ export function StatementIngestionPanel() {
     setError(null);
     const formData = new FormData();
     formData.set("file", archivo);
-    const r = await previsualizarExtractoPDF(formData);
+
+    // Red de seguridad del lado del cliente: pase lo que pase en el servidor
+    // (timeout de IA colgado, cold start, lo que sea), la UI nunca debe
+    // quedar atascada en "Leyendo el extracto…" más de 30s.
+    let venciTimeout = false;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        venciTimeout = true;
+        reject(new Error("timeout"));
+      }, 30000);
+    });
+
+    let r;
+    try {
+      r = await Promise.race([previsualizarExtractoPDF(formData), timeoutPromise]);
+    } catch {
+      setEstado("idle");
+      setError(
+        venciTimeout
+          ? "El archivo tardó demasiado en procesarse. Probá de nuevo o con otro archivo."
+          : "No se pudo leer el archivo."
+      );
+      return;
+    }
+
     if (!r.ok || !r.movimientos) {
       setEstado("idle");
       setError(r.error ?? "No se pudo leer el archivo.");

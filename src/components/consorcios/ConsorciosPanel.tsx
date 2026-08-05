@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { formatARS } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -29,8 +30,11 @@ const estadoConfig: Record<
 };
 
 export function ConsorciosPanel() {
+  const searchParams = useSearchParams();
   const { state } = useAppStore();
-  const [seleccionadoId, setSeleccionadoId] = useState(state.consorcios[0]?.id ?? "");
+  const [seleccionadoId, setSeleccionadoId] = useState(
+    searchParams.get("consorcio") ?? state.consorcios[0]?.id ?? ""
+  );
 
   const consorcio = state.consorcios.find((c) => c.id === seleccionadoId) ?? state.consorcios[0];
   const unidadesDelConsorcio = useMemo(

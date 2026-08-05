@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Bell, Menu, Search } from "lucide-react";
 import { useMobileNav } from "@/lib/mobile-nav";
 import { LogoMark } from "./Logo";
+import { CommandPalette } from "./CommandPalette";
 
 export function Topbar({
   title,
@@ -12,6 +14,18 @@ export function Topbar({
   subtitle?: string;
 }) {
   const { open } = useMobileNav();
+  const [busquedaAbierta, setBusquedaAbierta] = useState(false);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setBusquedaAbierta(true);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <header className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/80 px-4 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80 sm:px-6">
@@ -38,10 +52,25 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400 lg:flex dark:border-slate-800 dark:bg-slate-900">
+        <button
+          type="button"
+          onClick={() => setBusquedaAbierta(true)}
+          className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400 hover:bg-slate-100 lg:flex dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+        >
           <Search size={16} />
           <span>Buscar unidad, consorcio…</span>
-        </div>
+          <kbd className="ml-2 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] dark:border-slate-700">
+            ⌘K
+          </kbd>
+        </button>
+        <button
+          type="button"
+          onClick={() => setBusquedaAbierta(true)}
+          aria-label="Buscar"
+          className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900 lg:hidden"
+        >
+          <Search size={18} />
+        </button>
         <button
           type="button"
           className="relative rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900"
@@ -53,6 +82,8 @@ export function Topbar({
           EF
         </div>
       </div>
+
+      <CommandPalette open={busquedaAbierta} onClose={() => setBusquedaAbierta(false)} />
     </header>
   );
 }

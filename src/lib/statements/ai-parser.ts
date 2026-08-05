@@ -5,6 +5,7 @@ import {
   generarExternalId,
   type MovimientoExtraidoPDF,
 } from "./parse-pdf-statement";
+import { parsearCSVLocal } from "./parse-csv-statement";
 
 // ----------------------------------------------------------------------------
 // Parser universal de extractos (PDF/imagen/CSV) vía LLM con Structured
@@ -54,6 +55,7 @@ const TAMANO_MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024; // 5MB — el payload base64
 const MAX_CHARS_TEXTO_A_IA = 20000; // ~5-6k tokens — cubre extractos de varios meses sin disparar costo/latencia
 const MAX_OUTPUT_TOKENS = 8000;
 const DEFAULT_MODEL = "gpt-4o-mini";
+const TIMEOUT_IA_MS = 20000; // la UI nunca debe quedar colgada esperando al LLM — a los 20s se corta y se usa el fallback local
 
 const MIME_A_TIPO: Record<string, TipoArchivoExtracto> = {
   "application/pdf": "pdf",
@@ -134,6 +136,7 @@ async function llamarOpenAI(config: ConfigIA, contenido: ContenidoMensaje[]): Pr
         json_schema: { name: "extracto_bancario", strict: true, schema: JSON_SCHEMA_EXTRACTO },
       },
     }),
+    signal: AbortSignal.timeout(TIMEOUT_IA_MS),
   });
 
   if (!respuesta.ok) {
@@ -237,6 +240,23 @@ export async function parseStatementWithAI(
     };
   }
 
+  // CSV es una estructura de columnas conocida — nunca hace falta un LLM
+  // para leerlo, así que se intenta local primero SIEMPRE (con o sin IA
+  // configurada). Instantáneo (milisegundos) y evita el viaje de red por
+  // completo en el caso más común de "extracto = export de un banco/billetera".
+  if (tipo === "csv") {
+    const resultadoCSV = parsearCSVLocal(fileBuffer.toString("utf-8"));
+    if (resultadoCSV.ok) {
+      return {
+        ok: true,
+        usedAI: false,
+        bankName: null,
+        accountIdentifier: null,
+        transactions: resultadoCSV.transactions,
+      };
+    }
+  }
+
   const config = obtenerConfigIA();
   if (!config) {
     return parsearConHeuristicoLocal(fileBuffer, tipo);
@@ -258,14 +278,32 @@ export async function parseStatementWithAI(
     const extracto = await llamarOpenAI(config, contenido);
     return { ok: true, usedAI: true, ...extracto };
   } catch (e) {
-    console.error("[ai-parser] Error llamando al LLM, no se hace fallback silencioso:", e);
+    const esTimeout = e instanceof Error && e.name === "TimeoutError";
+    console.error(
+      `[ai-parser] ${esTimeout ? "Timeout" : "Error"} llamando al LLM${esTimeout ? ` (${TIMEOUT_IA_MS}ms)` : ""}:`,
+      e
+    );
+
+    // Para PDF/CSV todavía queda el heurístico local como red de seguridad
+    // — la UI nunca debe quedar esperando indefinidamente a la IA. Para
+    // imágenes no hay fallback posible (no hay parser de píxeles sin IA),
+    // así que se devuelve el error rápido en vez de colgar la UI.
+    if (tipo !== "image") {
+      const fallback = await parsearConHeuristicoLocal(fileBuffer, tipo);
+      if (fallback.ok) return fallback;
+    }
+
     return {
       ok: false,
       usedAI: true,
       bankName: null,
       accountIdentifier: null,
       transactions: [],
-      error: e instanceof Error ? `No se pudo procesar con IA: ${e.message}` : "No se pudo procesar con IA.",
+      error: esTimeout
+        ? "La IA tardó demasiado en procesar el extracto y no se encontró un fallback local. Probá de nuevo o con otro archivo."
+        : e instanceof Error
+          ? `No se pudo procesar con IA: ${e.message}`
+          : "No se pudo procesar con IA.",
     };
   }
 }

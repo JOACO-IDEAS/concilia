@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { UploadCloud } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
@@ -20,7 +21,9 @@ export default function ConsorciosPage() {
             Importar consorcios desde Excel/CSV
           </Link>
         </div>
-        <ConsorciosPanel />
+        <Suspense fallback={<div className="text-sm text-slate-400">Cargando consorcios…</div>}>
+          <ConsorciosPanel />
+        </Suspense>
       </main>
     </>
   );
