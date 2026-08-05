@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as XLSX from "xlsx";
 import { extraerTextoPDF, generarExternalId, type MovimientoExtraidoPDF } from "./parse-pdf-statement";
 
 // ----------------------------------------------------------------------------
@@ -44,9 +45,9 @@ export interface ResultadoParserIA {
   error?: string;
 }
 
-export type TipoArchivoExtracto = "pdf" | "image" | "csv";
+export type TipoArchivoExtracto = "pdf" | "image" | "csv" | "excel";
 
-const TAMANO_MAXIMO_DOCUMENTO_BYTES = 8 * 1024 * 1024; // 8MB — PDF/CSV
+const TAMANO_MAXIMO_DOCUMENTO_BYTES = 8 * 1024 * 1024; // 8MB — PDF/CSV/Excel
 const TAMANO_MAXIMO_IMAGEN_BYTES = 5 * 1024 * 1024; // 5MB — el payload base64 infla ~33% sobre esto
 const MAX_CHARS_TEXTO_A_IA = 20000; // ~5-6k tokens — cubre extractos de varios meses sin disparar costo/latencia
 const MAX_OUTPUT_TOKENS = 8000;
@@ -59,15 +60,20 @@ const MIME_A_TIPO: Record<string, TipoArchivoExtracto> = {
   "image/jpeg": "image",
   "image/jpg": "image",
   "text/csv": "csv",
-  "application/vnd.ms-excel": "csv", // algunos navegadores/OS reportan CSV así
+  "application/vnd.ms-excel": "excel", // .xls real — no confundir con CSVs mal etiquetados, esos entran por extensión .csv
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel", // .xlsx
 };
 
 export function detectarTipoArchivo(mimeType: string, fileName: string): TipoArchivoExtracto | null {
-  if (MIME_A_TIPO[mimeType]) return MIME_A_TIPO[mimeType];
   const nombre = fileName.toLowerCase();
+  // La extensión .csv manda primero — algunos sistemas exportan CSV con el
+  // MIME ambiguo "application/vnd.ms-excel", que también es el MIME real de
+  // un .xls legítimo.
+  if (nombre.endsWith(".csv")) return "csv";
+  if (MIME_A_TIPO[mimeType]) return MIME_A_TIPO[mimeType];
   if (nombre.endsWith(".pdf")) return "pdf";
   if (nombre.endsWith(".png") || nombre.endsWith(".jpg") || nombre.endsWith(".jpeg")) return "image";
-  if (nombre.endsWith(".csv")) return "csv";
+  if (nombre.endsWith(".xlsx") || nombre.endsWith(".xls")) return "excel";
   return null;
 }
 
@@ -96,9 +102,9 @@ function obtenerConfigIA(): ConfigIA | null {
   return configMemo;
 }
 
-const SYSTEM_PROMPT = `Sos un experto procesando extractos bancarios argentinos (y del resto de LATAM: bancos tradicionales, Mercado Pago, Nubank, billeteras virtuales, etc.), en cualquier formato — PDF, imagen o CSV.
+const SYSTEM_PROMPT = `Sos un experto procesando extractos bancarios argentinos (y del resto de LATAM: bancos tradicionales, Mercado Pago, Nubank, billeteras virtuales, etc.), en cualquier formato — PDF, imagen, CSV o planilla Excel.
 
-Vas a recibir texto desestructurado (a veces mal extraído de un PDF o una imagen escaneada) o CSVs mal formateados: columnas en cualquier orden, separadores inconsistentes, encabezados en cualquier idioma, texto pegado, saltos de línea raros. Nunca rechaces un documento por estar desprolijo — encontrá las fechas, descripciones, montos y referencias donde sea que estén, ignorando la basura decorativa (títulos, totales, leyendas legales, pies de página), y devolvé SIEMPRE un JSON estandarizado. Para eso existís.
+Vas a recibir texto desestructurado (a veces mal extraído de un PDF o una imagen escaneada), CSVs mal formateados, o una planilla Excel convertida a texto plano tipo CSV (a veces con varias hojas separadas por un encabezado "--- Hoja: <nombre> ---"): columnas en cualquier orden, separadores inconsistentes, encabezados en cualquier idioma, texto pegado, saltos de línea raros. Nunca rechaces un documento por estar desprolijo — encontrá las fechas, descripciones, montos y referencias donde sea que estén, ignorando la basura decorativa (títulos, totales, leyendas legales, pies de página), y devolvé SIEMPRE un JSON estandarizado. Para eso existís.
 
 Devolvé ÚNICAMENTE los movimientos reales de la cuenta (no encabezados, totales, ni texto decorativo). Para cada movimiento:
 - "date": fecha en formato ISO estricto YYYY-MM-DD.
@@ -152,6 +158,27 @@ async function llamarOpenAI(config: ConfigIA, contenido: ContenidoMensaje[]): Pr
   return ExtractoIASchema.parse(json); // defensa en profundidad — no confiar ciegamente en el modelo
 }
 
+/**
+ * Convierte un .xlsx/.xls (binario) a texto plano tipo CSV, hoja por hoja,
+ * para que lo pueda leer la IA como cualquier otro documento de texto — un
+ * workbook de Excel nunca se manda crudo al modelo. Si hay más de una hoja,
+ * se antepone el nombre de cada una como separador para que la IA no mezcle
+ * movimientos de hojas distintas (ej. "Enero" / "Febrero").
+ */
+function extraerTextoDeExcel(buffer: Buffer): string {
+  const libro = XLSX.read(buffer, { type: "buffer" });
+  const partes: string[] = [];
+
+  for (const nombreHoja of libro.SheetNames) {
+    const hoja = libro.Sheets[nombreHoja];
+    const csv = XLSX.utils.sheet_to_csv(hoja);
+    if (!csv.trim()) continue;
+    partes.push(libro.SheetNames.length > 1 ? `--- Hoja: ${nombreHoja} ---\n${csv}` : csv);
+  }
+
+  return partes.join("\n\n");
+}
+
 function truncarTexto(texto: string): string {
   if (texto.length <= MAX_CHARS_TEXTO_A_IA) return texto;
   console.warn(
@@ -161,13 +188,16 @@ function truncarTexto(texto: string): string {
 }
 
 /**
- * Parser universal de extractos — PDF, PNG/JPG o CSV, de cualquier entidad
- * financiera. TODO documento pasa siempre por la IA (texto extraído para
- * PDF/CSV, o la imagen para PNG/JPG) con Structured Output (JSON Schema
- * estricto generado desde el mismo Zod schema que valida la respuesta) — no
- * hay atajo local ni validación de columnas que pueda rechazar un documento
- * válido antes de llegar acá. Si la IA no está configurada o falla, se
- * devuelve un error claro (nunca un cuelgue ni una degradación silenciosa).
+ * Parser universal de extractos — PDF, PNG/JPG, CSV o Excel (.xlsx/.xls), de
+ * cualquier entidad financiera. TODO documento pasa siempre por la IA (texto
+ * extraído para PDF/CSV/Excel, o la imagen para PNG/JPG) con Structured
+ * Output (JSON Schema estricto generado desde el mismo Zod schema que valida
+ * la respuesta) — no hay atajo local ni validación de columnas que pueda
+ * rechazar un documento válido antes de llegar acá. PDF y Excel son binarios:
+ * nunca se mandan crudos al modelo, siempre se les extrae el texto primero
+ * (`extraerTextoPDF`/`extraerTextoDeExcel`). Si la IA no está configurada o
+ * falla, se devuelve un error claro (nunca un cuelgue ni una degradación
+ * silenciosa).
  */
 export async function parseStatementWithAI(
   fileBuffer: Buffer,
@@ -182,7 +212,7 @@ export async function parseStatementWithAI(
       bankName: null,
       accountIdentifier: null,
       transactions: [],
-      error: "Formato no soportado — subí un PDF, PNG, JPG o CSV.",
+      error: "Formato no soportado — subí un PDF, PNG, JPG, CSV o Excel (.xlsx/.xls).",
     };
   }
 
@@ -219,7 +249,10 @@ export async function parseStatementWithAI(
         { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
       ];
     } else {
-      const textoCrudo = tipo === "pdf" ? await extraerTextoPDF(fileBuffer) : fileBuffer.toString("utf-8");
+      let textoCrudo: string;
+      if (tipo === "pdf") textoCrudo = await extraerTextoPDF(fileBuffer);
+      else if (tipo === "excel") textoCrudo = extraerTextoDeExcel(fileBuffer);
+      else textoCrudo = fileBuffer.toString("utf-8");
       contenido = [{ type: "text", text: truncarTexto(textoCrudo) }];
     }
 

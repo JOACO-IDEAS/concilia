@@ -32,14 +32,13 @@ export interface PreviewExtractoResultado {
 }
 
 /**
- * Paso 1 (previsualización) — sube el extracto (PDF, PNG/JPG o CSV, de
- * cualquier entidad financiera de LATAM), lo manda al parser universal
- * (`parseStatementWithAI` — LLM con Structured Output, o el heurístico local
- * si no hay `OPENAI_API_KEY` configurada) y corre el motor de reconciliación
- * (`reconcile-payment.ts`, reutilizado tal cual del pipeline de webhooks) en
- * modo lectura para mostrarle al usuario qué organización se propone para
- * cada fila ANTES de confirmar. No escribe nada en la base — `reconcilePayment`
- * es puramente de lectura.
+ * Paso 1 (previsualización) — sube el extracto (PDF, PNG/JPG, CSV o Excel
+ * .xlsx/.xls, de cualquier entidad financiera de LATAM), lo manda al parser
+ * universal (`parseStatementWithAI` — siempre vía LLM con Structured Output)
+ * y corre el motor de reconciliación (`reconcile-payment.ts`, reutilizado tal
+ * cual del pipeline de webhooks) en modo lectura para mostrarle al usuario
+ * qué organización se propone para cada fila ANTES de confirmar. No escribe
+ * nada en la base — `reconcilePayment` es puramente de lectura.
  */
 export async function previsualizarExtractoPDF(formData: FormData): Promise<PreviewExtractoResultado> {
   const archivo = formData.get("file");
@@ -49,7 +48,7 @@ export async function previsualizarExtractoPDF(formData: FormData): Promise<Prev
 
   const tipo = detectarTipoArchivo(archivo.type, archivo.name);
   if (!tipo) {
-    return { ok: false, error: "Formato no soportado — subí un PDF, PNG, JPG o CSV." };
+    return { ok: false, error: "Formato no soportado — subí un PDF, PNG, JPG, CSV o Excel (.xlsx/.xls)." };
   }
   const limite = limiteBytesPara(tipo);
   if (archivo.size > limite) {

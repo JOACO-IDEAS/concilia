@@ -16,12 +16,12 @@ import { UploadCloud, FileWarning, Loader2, CircleCheck, Check, Sparkles, X } fr
 type Estado = "idle" | "leyendo" | "listo" | "hecho";
 
 /**
- * Entrada de datos de "Pagos" — dropzone universal (PDF/imagen/CSV) + un
- * solo clic para confirmar. Cero Ficción: no hay checkboxes por fila — la
- * IA/heurístico ya decidió qué es un cobro válido (`esEgreso`/`yaImportado`
- * filtrados), así que se auto-selecciona todo lo importable y se muestra un
- * resumen, no una lista para auditar línea por línea (mismo patrón que ya
- * se usa en la Bandeja de Trabajo). Reutiliza `previsualizarExtractoPDF`/
+ * Entrada de datos de "Pagos" — dropzone universal (PDF/imagen/CSV/Excel) +
+ * un solo clic para confirmar. Cero Ficción: no hay checkboxes por fila — la
+ * IA ya decidió qué es un cobro válido (`esEgreso`/`yaImportado` filtrados),
+ * así que se auto-selecciona todo lo importable y se muestra un resumen, no
+ * una lista para auditar línea por línea (mismo patrón que ya se usa en la
+ * Bandeja de Trabajo). Reutiliza `previsualizarExtractoPDF`/
  * `confirmarExtractoPDF` tal cual.
  */
 export function StatementIngestionPanel() {
@@ -204,7 +204,7 @@ export function StatementIngestionPanel() {
     <Card className="animate-fade-in-up">
       <CardHeader
         title="Cargar extracto"
-        subtitle="PDF, imagen o CSV de cualquier banco o billetera — la IA detecta los movimientos"
+        subtitle="PDF, imagen, CSV o Excel de cualquier banco o billetera — la IA detecta los movimientos"
       />
       <div className="p-5">
         <div
@@ -230,7 +230,7 @@ export function StatementIngestionPanel() {
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,application/pdf,.png,image/png,.jpg,.jpeg,image/jpeg,.csv,text/csv"
+            accept=".pdf,application/pdf,.png,image/png,.jpg,.jpeg,image/jpeg,.csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xls,application/vnd.ms-excel"
             className="hidden"
             onChange={(e) => procesar(e.target.files?.[0])}
           />
