@@ -92,11 +92,16 @@ export function CobranzaMoraCard({ datosIniciales }: { datosIniciales: ListaMoro
             <Badge tone="amber" icon={<Clock size={12} />}>
               En Espera
             </Badge>
+          ) : notificables === 0 ? (
+            <Badge tone="slate" icon={<Clock size={12} />}>
+              Notificados recientemente
+            </Badge>
           ) : null}
           <Button
             size="lg"
             onClick={reclamar}
             disabled={enviando || notificables === 0}
+            title={notificables === 0 && !enEspera ? "Ya se notificó a todos hace poco (cooldown de 3 días)" : undefined}
             className="w-full sm:w-auto"
           >
             {enviando ? <Loader2 className="animate-spin" /> : <MessageCircle size={16} />}

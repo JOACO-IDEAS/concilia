@@ -1,7 +1,8 @@
 import { Topbar } from "@/components/layout/Topbar";
-import { AtencionRequeridaCard } from "@/components/bandeja-de-trabajo/AtencionRequeridaCard";
+import { AtencionRequeridaCard } from "@/components/conciliacion/AtencionRequeridaCard";
 import { CobranzaMoraCard } from "@/components/bandeja-de-trabajo/CobranzaMoraCard";
-import { obtenerBandejaInconsistencias, obtenerResumenBandejaTrabajo } from "./actions";
+import { obtenerBandejaInconsistencias } from "@/app/conciliacion/payments-actions";
+import { obtenerResumenBandejaTrabajo } from "./actions";
 import { getOverdueOrganizations } from "@/app/morosidad/actions";
 
 // Datos reales que cambian todo el tiempo — nunca cacheado como estático.

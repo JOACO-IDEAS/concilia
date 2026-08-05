@@ -136,3 +136,75 @@ export async function obtenerSugerenciasSmartMatch(
 ): Promise<{ ok: boolean; sugerencias: SugerenciaSmartMatch[]; error?: string }> {
   return calcularSugerenciasSmartMatch(paymentTransactionId);
 }
+
+export interface SugerenciaInconsistenciaDTO {
+  organizationId: string;
+  organizationName: string;
+  confidence: number;
+  motivo: string;
+}
+
+export interface InconsistenciaDTO {
+  id: string;
+  amount: number;
+  currency: string;
+  concept: string | null;
+  payerIdentifier: string | null;
+  createdAt: string;
+  sugerencia: SugerenciaInconsistenciaDTO | null;
+}
+
+export interface BandejaInconsistenciasResultado {
+  ok: boolean;
+  items: InconsistenciaDTO[];
+  error?: string;
+}
+
+/**
+ * "Necesita tu aprobación" — pagos `UNMATCHED` con la mejor sugerencia de
+ * Smart Match ya calculada (Top 1 de `calcularSugerenciasSmartMatch`, sin
+ * duplicar el heurístico). Única fuente de verdad, usada tanto por
+ * `/conciliacion` como por la Bandeja de Trabajo — un solo número de
+ * confianza y un solo botón por pago, no una tabla ni un modal con 3
+ * opciones.
+ */
+export async function obtenerBandejaInconsistencias(): Promise<BandejaInconsistenciasResultado> {
+  try {
+    const pagos = await prisma.paymentTransaction.findMany({
+      where: { status: "UNMATCHED" },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+
+    const items: InconsistenciaDTO[] = [];
+    for (const pago of pagos) {
+      const resultado = await calcularSugerenciasSmartMatch(pago.id);
+      const top = resultado.ok ? resultado.sugerencias[0] : undefined;
+
+      items.push({
+        id: pago.id,
+        amount: pago.amount.toNumber(),
+        currency: pago.currency,
+        concept: pago.concept,
+        payerIdentifier: pago.payerIdentifier,
+        createdAt: pago.createdAt.toISOString(),
+        sugerencia: top
+          ? {
+              organizationId: top.organizationId,
+              organizationName: top.organizationName,
+              confidence: top.confidence,
+              motivo: top.motivo,
+            }
+          : null,
+      });
+    }
+
+    return { ok: true, items };
+  } catch (e) {
+    return {
+      ok: false,
+      items: [],
+      error: e instanceof Error ? e.message : "No se pudo consultar la bandeja de inconsistencias.",
+    };
+  }
+}

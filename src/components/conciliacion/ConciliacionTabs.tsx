@@ -1,65 +1,83 @@
 "use client";
 
 import { useState } from "react";
-import { ReconciliationView } from "@/components/reconciliation/ReconciliationView";
-import { WebhooksPanel } from "./WebhooksPanel";
+import { Card, CardHeader } from "@/components/ui/Card";
 import { StatementIngestionPanel } from "./StatementIngestionPanel";
+import { AtencionRequeridaCard } from "./AtencionRequeridaCard";
+import { ReconciliationView } from "@/components/reconciliation/ReconciliationView";
 import type { ListaPagosResultado } from "@/app/conciliacion/payments-actions";
-import { Landmark, Webhook, FileText } from "lucide-react";
+import type { BandejaInconsistenciasResultado } from "@/app/conciliacion/payments-actions";
+import { formatDateTime, formatMonto } from "@/lib/format";
+import { CircleCheck, Wrench, ChevronDown, ChevronUp } from "lucide-react";
 
-type Tab = "manual" | "webhooks" | "extractos";
+/**
+ * Flujo único de "Pagos" — ya no hay tabs entre Webhooks/Extractos/Manual:
+ * son pasos de una misma tarea (cargar → aprobar lo que falta → ver lo ya
+ * resuelto), no alternativas que el usuario tenga que elegir. "Conciliación
+ * manual" (mock, `ReconciliationView`) sigue existiendo para casos
+ * especiales/debugging, pero oculta detrás de un toggle discreto — el
+ * flujo principal es Smart Match + aprobación.
+ */
+export function ConciliacionTabs({
+  datosWebhooks,
+  bandeja,
+}: {
+  datosWebhooks: ListaPagosResultado;
+  bandeja: BandejaInconsistenciasResultado;
+}) {
+  const [modoManual, setModoManual] = useState(false);
 
-export function ConciliacionTabs({ datosWebhooks }: { datosWebhooks: ListaPagosResultado }) {
-  const [tab, setTab] = useState<Tab>("manual");
+  const historial = datosWebhooks.ok
+    ? datosWebhooks.pagos.filter((p) => p.status === "MATCHED").slice(0, 5)
+    : [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900 sm:inline-flex">
+    <div className="space-y-6">
+      <StatementIngestionPanel />
+
+      <AtencionRequeridaCard
+        datosIniciales={bandeja}
+        organizaciones={datosWebhooks.ok ? datosWebhooks.organizaciones : []}
+      />
+
+      {historial.length > 0 ? (
+        <Card className="animate-fade-in-up">
+          <CardHeader title="Historial reciente" subtitle="Últimos pagos ya conciliados" />
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {historial.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <CircleCheck size={15} className="shrink-0 text-emerald-500" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                      {p.organization?.name ?? "Sin organización"}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {p.matchedAt ? formatDateTime(p.matchedAt) : formatDateTime(p.createdAt)}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-sm font-medium text-slate-700 dark:text-slate-300">
+                  {formatMonto(p.amount, p.currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <div className="pt-2 text-center">
         <button
-          onClick={() => setTab("manual")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-            tab === "manual"
-              ? "bg-blue-600 text-white"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          }`}
+          onClick={() => setModoManual((v) => !v)}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
         >
-          <Landmark size={14} />
-          Conciliación manual
-        </button>
-        <button
-          onClick={() => setTab("webhooks")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-            tab === "webhooks"
-              ? "bg-blue-600 text-white"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          }`}
-        >
-          <Webhook size={14} />
-          Webhooks (Open Banking)
-          {datosWebhooks.ok && datosWebhooks.pagos.some((p) => p.status !== "MATCHED") ? (
-            <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-              {datosWebhooks.pagos.filter((p) => p.status !== "MATCHED").length}
-            </span>
-          ) : null}
-        </button>
-        <button
-          onClick={() => setTab("extractos")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-            tab === "extractos"
-              ? "bg-blue-600 text-white"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          }`}
-        >
-          <FileText size={14} />
-          Extractos PDF
+          <Wrench size={12} />
+          Conciliación manual (modo avanzado)
+          {modoManual ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       </div>
 
-      {tab === "manual" ? <ReconciliationView /> : null}
-      {tab === "webhooks" ? <WebhooksPanel datosIniciales={datosWebhooks} /> : null}
-      {tab === "extractos" ? (
-        <StatementIngestionPanel onVerWebhooks={() => setTab("webhooks")} />
-      ) : null}
+      {modoManual ? <ReconciliationView /> : null}
     </div>
   );
 }

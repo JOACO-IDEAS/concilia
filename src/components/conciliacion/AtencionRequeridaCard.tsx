@@ -11,8 +11,8 @@ import { vincularPagoManualmente } from "@/app/conciliacion/payments-actions";
 import type {
   BandejaInconsistenciasResultado,
   InconsistenciaDTO,
-} from "@/app/bandeja-de-trabajo/actions";
-import { Sparkles, MessageCircleCheck, Loader2, ArrowRight, DatabaseZap } from "lucide-react";
+} from "@/app/conciliacion/payments-actions";
+import { Sparkles, MessageCircleCheck, Loader2, ArrowRight, Link2, DatabaseZap } from "lucide-react";
 
 function formatMonto(amount: number, currency: string): string {
   try {
@@ -29,33 +29,37 @@ function toneConfianza(confidence: number): "green" | "amber" | "slate" {
 }
 
 /**
- * Pregunta 2 — "¿Qué requiere mi atención?": una card simple por pago
- * `UNMATCHED`, con la sugerencia de Smart Match y un solo botón. Sin título
- * ni contador propio (ya lo dice el resumen de arriba) y sin estado vacío
- * propio (ídem) — si no hay nada que aprobar, esta sección no renderiza
- * nada, para no repetir el mismo mensaje dos veces.
+ * "Necesita tu aprobación" — una card simple por pago `UNMATCHED`, con la
+ * sugerencia de Smart Match y un solo botón. Única fuente de verdad,
+ * reutilizada tal cual por `/conciliacion` y por la Bandeja de Trabajo — ya
+ * no existen ni el modal de Sugerencias ni la tabla de Webhooks por
+ * separado.
+ *
+ * `organizaciones` es opcional: si se pasa (uso en `/conciliacion`), el caso
+ * "sin sugerencia" muestra un selector inline para vincular a mano ahí
+ * mismo. Si no se pasa (uso en la Bandeja de Trabajo), ese caso linkea a
+ * `/conciliacion` para resolverlo con más contexto.
  */
 export function AtencionRequeridaCard({
   datosIniciales,
+  organizaciones,
 }: {
   datosIniciales: BandejaInconsistenciasResultado;
+  organizaciones?: { id: string; name: string }[];
 }) {
   const { showToast } = useToast();
   const router = useRouter();
   const [items, setItems] = useState<InconsistenciaDTO[]>(datosIniciales.items);
   const [procesando, setProcesando] = useState<string | null>(null);
+  const [seleccion, setSeleccion] = useState<Record<string, string>>({});
 
-  async function aprobar(item: InconsistenciaDTO) {
-    if (!item.sugerencia) return;
-    setProcesando(item.id);
-    const r = await vincularPagoManualmente(item.id, item.sugerencia.organizationId);
+  async function aprobar(paymentTransactionId: string, organizationId: string, organizationName: string) {
+    setProcesando(paymentTransactionId);
+    const r = await vincularPagoManualmente(paymentTransactionId, organizationId);
     setProcesando(null);
     if (r.ok) {
-      showToast(
-        "Aprobado y notificado",
-        `${item.sugerencia.organizationName} · Notificación enviada por WhatsApp`
-      );
-      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      showToast("Aprobado y notificado", `${organizationName} · Notificación enviada por WhatsApp`);
+      setItems((prev) => prev.filter((i) => i.id !== paymentTransactionId));
       router.refresh();
     } else {
       showToast("No se pudo aprobar", r.error);
@@ -109,7 +113,7 @@ export function AtencionRequeridaCard({
 
           {item.sugerencia ? (
             <Button
-              onClick={() => aprobar(item)}
+              onClick={() => aprobar(item.id, item.sugerencia!.organizationId, item.sugerencia!.organizationName)}
               disabled={procesando !== null}
               className="w-full shrink-0 sm:w-auto"
             >
@@ -120,12 +124,39 @@ export function AtencionRequeridaCard({
               )}
               Aprobar y Notificar
             </Button>
+          ) : organizaciones ? (
+            <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto">
+              <select
+                value={seleccion[item.id] ?? ""}
+                onChange={(e) => setSeleccion((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 sm:flex-none"
+              >
+                <option value="">Elegir organización…</option>
+                {organizaciones.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!seleccion[item.id] || procesando !== null}
+                onClick={() => {
+                  const org = organizaciones.find((o) => o.id === seleccion[item.id]);
+                  if (org) aprobar(item.id, org.id, org.name);
+                }}
+              >
+                {procesando === item.id ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+                Vincular
+              </Button>
+            </div>
           ) : (
             <Link
               href="/conciliacion"
               className="flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
             >
-              Revisar en Webhooks <ArrowRight size={12} />
+              Revisar en Conciliación <ArrowRight size={12} />
             </Link>
           )}
         </div>
