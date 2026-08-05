@@ -141,7 +141,7 @@ export function HeaderSearch() {
       </div>
 
       {mostrarDropdown ? (
-        <div className="absolute top-full right-0 z-50 mt-2 max-h-[70vh] w-96 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="absolute top-full right-0 z-[9999] mt-2 max-h-[70vh] w-96 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
           {consorciosFiltrados.length > 0 ? (
             <div className="mb-1">
               <p className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-slate-400">

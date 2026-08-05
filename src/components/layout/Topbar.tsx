@@ -15,7 +15,7 @@ export function Topbar({
   const { open } = useMobileNav();
 
   return (
-    <header className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/80 px-4 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80 sm:px-6">
+    <header className="no-print relative z-30 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/80 px-4 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80 sm:px-6">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
