@@ -10,11 +10,11 @@ import { formatMonto } from "@/lib/format";
 import { MessageCircle, Loader2, Clock, Wallet, DatabaseZap, CircleCheck } from "lucide-react";
 
 /**
- * "Cobranza y Mora" del Centro de Control — Cero Ficción: un solo número
- * (saldo total moroso estimado) y un solo botón primario, sin tabla por
- * organización (esa vista detallada sigue viva en /morosidad). El botón
- * llama directo a `ejecutarReclamadorAutomatico` (after() + Promise.allSettled
- * ya resuelto ahí, no se duplica).
+ * Pregunta 3 de la Bandeja de Trabajo — "¿Qué puedo ejecutar ahora?": un
+ * solo número (saldo total moroso estimado) y un solo botón primario, sin
+ * tabla por organización (esa vista detallada sigue viva en /morosidad). El
+ * botón llama directo a `ejecutarReclamadorAutomatico` (after() +
+ * Promise.allSettled ya resuelto ahí, no se duplica).
  */
 export function CobranzaMoraCard({ datosIniciales }: { datosIniciales: ListaMorosidadResultado }) {
   const { showToast } = useToast();
@@ -24,7 +24,7 @@ export function CobranzaMoraCard({ datosIniciales }: { datosIniciales: ListaMoro
   if (!datosIniciales.ok) {
     return (
       <Card className="animate-fade-in-up">
-        <CardHeader title="Cobranza y Mora" subtitle="Organizaciones con saldos vencidos" />
+        <CardHeader title="Cobranza de mora" subtitle="Organizaciones con saldos vencidos" />
         <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
             <DatabaseZap size={22} />
@@ -55,7 +55,7 @@ export function CobranzaMoraCard({ datosIniciales }: { datosIniciales: ListaMoro
 
   return (
     <Card className="animate-fade-in-up">
-      <CardHeader title="Cobranza y Mora" subtitle="Organizaciones con saldos vencidos" />
+      <CardHeader title="Cobranza de mora" subtitle="Organizaciones con saldos vencidos" />
       <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
         <div>
           <p className="flex items-center justify-center gap-1 text-xs text-slate-500 dark:text-slate-400 sm:justify-start">

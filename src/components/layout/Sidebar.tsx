@@ -12,7 +12,7 @@ import {
   Home,
   FileBarChart,
   UploadCloud,
-  Sparkles,
+  Inbox,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -22,9 +22,9 @@ import { planParaUso } from "@/lib/plans";
 import { formatARS } from "@/lib/format";
 import { Logo } from "./Logo";
 
-// Centro de Control primero y destacado — es la nueva puerta de entrada
-// "Cero Ficción" (entrada de datos + bandeja de IA + cobranza en un solo
-// lugar). El resto de la navegación queda igual, sin romper nada existente.
+// Bandeja de Trabajo primero y destacada — es la puerta de entrada: tu
+// empleado de IA ya hizo el trabajo, acá aprobás lo que necesita tu firma.
+// El resto de la navegación queda igual, sin romper nada existente.
 interface NavItem {
   href: string;
   label: string;
@@ -33,7 +33,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/centro-de-control", label: "Centro de Control", icon: Sparkles, destacado: true },
+  { href: "/bandeja-de-trabajo", label: "Bandeja de Trabajo", icon: Inbox, destacado: true },
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard", label: "Analítica", icon: BarChart3 },
   { href: "/consorcios", label: "Consorcios", icon: Building2 },

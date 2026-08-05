@@ -27,11 +27,11 @@ export interface BandejaInconsistenciasResultado {
 }
 
 /**
- * "Bandeja de Entrada de IA" del Centro de Control — pagos `UNMATCHED` con
- * la mejor sugerencia de Smart Match ya calculada (Top 1 de
+ * Pregunta 2 de la Bandeja de Trabajo — "¿Qué requiere mi atención?": pagos
+ * `UNMATCHED` con la mejor sugerencia de Smart Match ya calculada (Top 1 de
  * `calcularSugerenciasSmartMatch`, reutilizado tal cual, sin duplicar el
- * heurístico). Pensada para "Cero Ficción": el usuario ve un solo número de
- * confianza y un solo botón, no una tabla ni un modal con 3 opciones.
+ * heurístico). El usuario ve un solo número de confianza y un solo botón,
+ * no una tabla ni un modal con 3 opciones.
  */
 export async function obtenerBandejaInconsistencias(): Promise<BandejaInconsistenciasResultado> {
   try {
@@ -70,6 +70,33 @@ export async function obtenerBandejaInconsistencias(): Promise<BandejaInconsiste
       ok: false,
       items: [],
       error: e instanceof Error ? e.message : "No se pudo consultar la bandeja de inconsistencias.",
+    };
+  }
+}
+
+export interface ResumenBandejaTrabajo {
+  ok: boolean;
+  autoConciliados: number;
+  error?: string;
+}
+
+/**
+ * Pregunta 1 de la Bandeja de Trabajo — "¿Cuántos pagos se procesaron
+ * automáticamente?": cuenta total de `PaymentTransaction` que el motor de
+ * reconciliación (webhooks/ingesta) resolvió solo, sin intervención humana
+ * (`matchMethod: "AUTO"`). Un número, no un gráfico.
+ */
+export async function obtenerResumenBandejaTrabajo(): Promise<ResumenBandejaTrabajo> {
+  try {
+    const autoConciliados = await prisma.paymentTransaction.count({
+      where: { status: "MATCHED", matchMethod: "AUTO" },
+    });
+    return { ok: true, autoConciliados };
+  } catch (e) {
+    return {
+      ok: false,
+      autoConciliados: 0,
+      error: e instanceof Error ? e.message : "No se pudo consultar el resumen.",
     };
   }
 }
