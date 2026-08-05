@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -48,6 +48,42 @@ export function StatementIngestionPanel() {
     [movimientos]
   );
 
+  // Evita setear estado sobre un componente ya desmontado (ej. el usuario
+  // navegó a otra sección mientras el archivo se estaba leyendo) y asegura
+  // que el timeout de seguridad de abajo nunca quede vivo de más.
+  const montadoRef = useRef(true);
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Reinicio defensivo al montar: si por lo que sea este componente
+    // llegara a montarse con un estado que no sea el inicial (ej. algún
+    // cambio futuro en el layout que lo mantenga vivo entre navegaciones en
+    // vez de desmontarlo), nunca debe arrancar mostrando un "Leyendo el
+    // extracto…" fantasma.
+    reiniciar();
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+      if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+    };
+  }, []);
+
+  // Red de seguridad extra: si esta pestaña vuelve desde el back-forward
+  // cache del navegador (bfcache) — común al usar atrás/adelante o al
+  // reabrir una pestaña que el SO había suspendido — el estado de React
+  // queda "congelado" tal cual estaba al momento de salir. Si eso pasa
+  // mientras estaba en "leyendo…", ya no hay ningún request en curso que
+  // lo vaya a resolver — quedaría trabado ahí para siempre. `pageshow` con
+  // `persisted:true` detecta exactamente ese caso y reinicia a un estado
+  // limpio en vez de dejar la UI mostrando un spinner fantasma.
+  useEffect(() => {
+    function onPageShow(e: PageTransitionEvent) {
+      if (e.persisted) reiniciar();
+    }
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   const procesar = useCallback(async (archivo: File | undefined) => {
     if (!archivo) return;
     setEstado("leyendo");
@@ -62,7 +98,7 @@ export function StatementIngestionPanel() {
     // mensaje de error.
     let venciTimeout = false;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutIdRef.current = setTimeout(() => {
         venciTimeout = true;
         reject(new Error("timeout"));
       }, 45000);
@@ -72,14 +108,20 @@ export function StatementIngestionPanel() {
     try {
       r = await Promise.race([previsualizarExtractoPDF(formData), timeoutPromise]);
     } catch {
-      setEstado("idle");
-      setError(
-        venciTimeout
-          ? "La IA tardó demasiado en analizar el archivo. Probá de nuevo en unos segundos."
-          : "No se pudo leer el archivo."
-      );
+      if (montadoRef.current) {
+        setEstado("idle");
+        setError(
+          venciTimeout
+            ? "La IA tardó demasiado en analizar el archivo. Probá de nuevo en unos segundos."
+            : "No se pudo leer el archivo."
+        );
+      }
       return;
+    } finally {
+      if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
     }
+
+    if (!montadoRef.current) return;
 
     if (!r.ok || !r.movimientos) {
       setEstado("idle");

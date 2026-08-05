@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/layout/PageTransition";
+import { ChunkErrorRecovery } from "@/components/layout/ChunkErrorRecovery";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppStoreProvider } from "@/lib/store";
 import { MobileNavProvider } from "@/lib/mobile-nav";
@@ -34,6 +35,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex h-full min-h-screen overflow-x-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <ChunkErrorRecovery />
         <AppStoreProvider>
           <MobileNavProvider>
             <ToastProvider>
