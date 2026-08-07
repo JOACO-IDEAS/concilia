@@ -96,6 +96,34 @@ enum ReminderChannel {
 }
 
 // ----------------------------------------------------------------------------
+// Enums del Motor de Conciliación por Unidad (Fase 1 — ver
+// RECONCILIATION_ENGINE_IMPLEMENTATION.md). Solo modelo de datos en esta
+// fase: sin motor de matching, sin score, sin IA, sin auto-conciliación.
+// ----------------------------------------------------------------------------
+
+enum UnitOccupantType {
+  OWNER
+  TENANT
+}
+
+enum ObligationStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+// Qué tipo de evento representa una fila de ReconciliationMatch — ver ese
+// modelo más abajo para el porqué de "append-only".
+enum ReconciliationDecision {
+  AUTO
+  SUGGESTED
+  APPROVED
+  REJECTED
+  EXCEPTION
+}
+
+// ----------------------------------------------------------------------------
 // Administrator — el actor que gestiona una o varias Organization.
 // ----------------------------------------------------------------------------
 model Administrator {
@@ -150,6 +178,7 @@ model Organization {
   billingProfiles     BillingProfile[]
   paymentTransactions PaymentTransaction[]
   paymentReminders    PaymentReminder[]
+  units               Unit[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -290,6 +319,18 @@ model PaymentTransaction {
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
+  // Unidad Funcional resuelta por el Motor de Conciliación (Fase 1 — ver
+  // RECONCILIATION_ENGINE_IMPLEMENTATION.md). Nullable a propósito: durante
+  // la importación inicial de un extracto, o mientras no exista el motor de
+  // matching (fases siguientes), no hay ninguna unidad resuelta todavía —
+  // el pago sigue siendo válido y consultable solo por `organizationId`,
+  // exactamente como funciona hoy. `status`/`matchedAt`/`matchMethod` NO
+  // cambian de significado: MATCHED sigue siendo "sabemos a quién
+  // pertenece"; que además se haya resuelto a nivel unidad es información
+  // adicional, no un reemplazo.
+  unitId String?
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
   amount   Decimal @db.Decimal(14, 2)
   currency String  @default("ARS") // código ISO 4217
 
@@ -305,10 +346,13 @@ model PaymentTransaction {
 
   rawPayload Json // payload crudo tal como llegó — para auditoría y debugging
 
+  reconciliationMatches ReconciliationMatch[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
+  @@index([unitId])
   @@index([status])
   @@index([payerIdentifier])
   @@map("payment_transactions")
@@ -338,4 +382,151 @@ model PaymentReminder {
 
   @@index([organizationId, sentAt])
   @@map("payment_reminders")
+}
+
+// ----------------------------------------------------------------------------
+// Motor de Conciliación por Unidad — Fase 1 (ver
+// RECONCILIATION_ENGINE_IMPLEMENTATION.md). Solo el modelo de datos: sin
+// motor de matching, sin score, sin IA, sin auto-conciliación, sin UI nueva.
+// Esas fases se construyen encima de esto, sin tocar nada de lo que ya
+// funciona hoy (ingesta de extractos, reconciliación por Organization).
+// ----------------------------------------------------------------------------
+
+// Unit — Unidad Funcional real, ligada a una Organization (consorcio). Hoy
+// solo existe como mock (UnidadFuncional en src/lib/mock-data.ts) — este
+// modelo la hace real.
+model Unit {
+  id             String @id @default(cuid())
+  organizationId String
+
+  code        String // ej. "3A" — identificador humano de la unidad
+  coefficient Decimal? @db.Decimal(6, 4) // % de participación — opcional, no bloquea el matching, se completa después
+
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owners              UnitOwner[]
+  obligations         Obligation[]
+  matches             ReconciliationMatch[]
+  paymentTransactions PaymentTransaction[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activa
+
+  // No puede haber dos "UF 3A" en el mismo consorcio.
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("units")
+}
+
+// UnitOwner — titular (propietario o inquilino) de una Unit. NO reutiliza
+// Contact a propósito: Contact modela a alguien que gestiona la relación
+// comercial con la Organization (contador, presidente) — un dominio y un
+// ciclo de vida distintos del de "quién vive/paga esta unidad" (ver
+// RECONCILIATION_ENGINE_IMPLEMENTATION.md sección A). No se creó una entidad
+// Person separada: para esta fase no hace falta reutilizar identidad de
+// persona entre unidades — un mismo titular con varias unidades simplemente
+// tiene varias filas de UnitOwner, denormalizado a propósito.
+model UnitOwner {
+  id     String @id @default(cuid())
+  unitId String
+
+  fullName     String
+  taxId        String? // CUIT/CUIL — sin esto el matching (fase futura) pierde su señal más fuerte, pero no es obligatorio cargarlo
+  relationship UnitOccupantType @default(OWNER)
+  email        String?
+  phone        String?
+  isPrimary    Boolean          @default(true) // co-titularidad — mismo criterio que ContactOrganization.isPrimaryContact
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = activo
+
+  // Evita duplicar la misma persona en la misma unidad. Sin unique global
+  // sobre taxId: la misma persona puede ser titular de varias unidades.
+  @@unique([unitId, taxId])
+  @@index([unitId])
+  @@index([taxId])
+  @@map("unit_owners")
+}
+
+// Obligation — deuda/factura/expensa de una Unit para un período. No existe
+// hoy ninguna base real de esto (ver IMPORT_PIPELINE.md, hallazgo sobre el
+// archivo de "liquidación de expensas" sin dónde importarse) — este modelo
+// la crea. La carga de datos real (importación, alta manual) es Fase 3, no
+// esta fase.
+model Obligation {
+  id     String @id @default(cuid())
+  unitId String
+
+  period      DateTime // primer día del mes que corresponde, ej. 2026-08-01
+  amount      Decimal          @db.Decimal(14, 2)
+  paidAmount  Decimal          @default(0) @db.Decimal(14, 2) // se actualiza junto con cada match aprobado (fase futura) — 0 mientras no exista el motor
+  status      ObligationStatus @default(PENDING)
+  concept     String? // ej. "Expensas Agosto 2026"
+  dueDate     DateTime?
+  externalRef String? // referencia/identificador del sistema de origen, si existe (ej. nro de liquidación)
+
+  unit    Unit                  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  matches ReconciliationMatch[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — null = vigente
+
+  // No se pueden emitir dos expensas del mismo período para la misma unidad
+  // — si hay que corregir un importe, se edita el registro, no se duplica.
+  @@unique([unitId, period])
+  @@index([unitId, status])
+  @@map("obligations")
+}
+
+// ReconciliationMatch — historial de conciliación a nivel Unidad. APPEND-ONLY
+// a propósito: cada fila es UN EVENTO de decisión (sugerencia del motor,
+// aprobación, rechazo, excepción) — nunca se actualiza una fila existente,
+// mismo criterio que PaymentReminder (arriba). Es la única forma de que la
+// auditoría (quién decidió, cuándo, con qué evidencia, qué candidatos
+// alternativos se consideraron) sea real y no una versión mutable que pierde
+// historia. El "candidato finalmente elegido" para un pago se lee del último
+// evento con decision AUTO o APPROVED en su cadena — el historial completo,
+// incluidos los rechazos, nunca se borra ni se sobreescribe.
+//
+// `score` queda nullable (0-99, o null cuando no hubo scoring — ej. un
+// vínculo manual sin motor de por medio). `signals`/`reason` son obligatorios
+// en cualquier fila — incluso una decisión manual debe dejar un motivo
+// legible y un detalle estructurado, aunque sea mínimo (`{}` / "Vinculado
+// manualmente"). El motor que los calcula automáticamente es de una fase
+// futura; el modelo ya soporta guardarlos desde ahora.
+//
+// `decidedBy` queda nullable a propósito: no existe todavía autenticación
+// real de usuarios en el proyecto (riesgo documentado explícitamente en
+// RECONCILIATION_ENGINE_IMPLEMENTATION.md sección J). null = decisión del
+// sistema (AUTO); se completa con una identidad real cuando exista login.
+model ReconciliationMatch {
+  id                   String @id @default(cuid())
+  paymentTransactionId String
+
+  unitId       String?
+  obligationId String?
+
+  decision ReconciliationDecision
+  score    Int? // 0-99 — null en una EXCEPCIÓN pura o un vínculo manual sin scoring
+  signals  Json // detalle estructurado de qué señales aportaron + candidatos alternativos considerados
+  reason   String // motivo legible, ej. "CUIT coincide + UF coincide + importe coincide"
+
+  decidedBy       String? // null = sistema/automático — ver nota arriba sobre autenticación
+  rejectionReason String? // solo cuando decision = REJECTED
+
+  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  unit               Unit?              @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  obligation         Obligation?        @relation(fields: [obligationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) // fecha/hora del evento — no hay updatedAt, la fila no se edita
+
+  @@index([paymentTransactionId, createdAt])
+  @@index([unitId])
+  @@index([obligationId])
+  @@index([decision])
+  @@map("reconciliation_matches")
 }
