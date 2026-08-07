@@ -1,6 +1,6 @@
 import { z } from "zod";
-import * as XLSX from "xlsx";
-import { extraerTextoPDF, generarExternalId, type MovimientoExtraidoPDF } from "./parse-pdf-statement";
+import { generarExternalId, type MovimientoExtraidoPDF } from "./parse-pdf-statement";
+import { extraerTextoDeDocumento } from "@/lib/documents";
 
 // ----------------------------------------------------------------------------
 // Parser universal de extractos (PDF/imagen/CSV) vía LLM con Structured
@@ -158,27 +158,6 @@ async function llamarOpenAI(config: ConfigIA, contenido: ContenidoMensaje[]): Pr
   return ExtractoIASchema.parse(json); // defensa en profundidad — no confiar ciegamente en el modelo
 }
 
-/**
- * Convierte un .xlsx/.xls (binario) a texto plano tipo CSV, hoja por hoja,
- * para que lo pueda leer la IA como cualquier otro documento de texto — un
- * workbook de Excel nunca se manda crudo al modelo. Si hay más de una hoja,
- * se antepone el nombre de cada una como separador para que la IA no mezcle
- * movimientos de hojas distintas (ej. "Enero" / "Febrero").
- */
-function extraerTextoDeExcel(buffer: Buffer): string {
-  const libro = XLSX.read(buffer, { type: "buffer" });
-  const partes: string[] = [];
-
-  for (const nombreHoja of libro.SheetNames) {
-    const hoja = libro.Sheets[nombreHoja];
-    const csv = XLSX.utils.sheet_to_csv(hoja);
-    if (!csv.trim()) continue;
-    partes.push(libro.SheetNames.length > 1 ? `--- Hoja: ${nombreHoja} ---\n${csv}` : csv);
-  }
-
-  return partes.join("\n\n");
-}
-
 function truncarTexto(texto: string): string {
   if (texto.length <= MAX_CHARS_TEXTO_A_IA) return texto;
   console.warn(
@@ -195,9 +174,10 @@ function truncarTexto(texto: string): string {
  * la respuesta) — no hay atajo local ni validación de columnas que pueda
  * rechazar un documento válido antes de llegar acá. PDF y Excel son binarios:
  * nunca se mandan crudos al modelo, siempre se les extrae el texto primero
- * (`extraerTextoPDF`/`extraerTextoDeExcel`). Si la IA no está configurada o
- * falla, se devuelve un error claro (nunca un cuelgue ni una degradación
- * silenciosa).
+ * vía `extraerTextoDeDocumento` (`src/lib/documents/` — este módulo no sabe
+ * ni le importa qué librería concreta hace la extracción de cada formato).
+ * Si la IA no está configurada o falla, se devuelve un error claro (nunca un
+ * cuelgue ni una degradación silenciosa).
  */
 export async function parseStatementWithAI(
   fileBuffer: Buffer,
@@ -249,10 +229,7 @@ export async function parseStatementWithAI(
         { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
       ];
     } else {
-      let textoCrudo: string;
-      if (tipo === "pdf") textoCrudo = await extraerTextoPDF(fileBuffer);
-      else if (tipo === "excel") textoCrudo = extraerTextoDeExcel(fileBuffer);
-      else textoCrudo = fileBuffer.toString("utf-8");
+      const textoCrudo = await extraerTextoDeDocumento({ buffer: fileBuffer, mimeType, fileName });
       contenido = [{ type: "text", text: truncarTexto(textoCrudo) }];
     }
 

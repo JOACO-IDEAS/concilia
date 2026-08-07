@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { PDFParse } from "pdf-parse";
 
 /**
  * Un movimiento detectado en un extracto bancario en PDF, ya en forma
@@ -27,22 +26,6 @@ const PALABRAS_DEBITO = [
   "retencion",
   "compra",
 ];
-
-/**
- * Extrae el texto plano de un PDF (sin OCR — asume texto embebido real, no
- * un escaneo). `pdf-parse` v2 usa `pdfjs-dist` por debajo; no requiere
- * dependencias nativas para esta operación (solo las necesitaría para
- * renderizar imágenes, que acá no se usa).
- */
-export async function extraerTextoPDF(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const resultado = await parser.getText();
-    return resultado.text;
-  } finally {
-    await parser.destroy();
-  }
-}
 
 function normalizarFecha(dd: string, mm: string, aaaa: string): string | null {
   const anio = aaaa.length === 2 ? `20${aaaa}` : aaaa;

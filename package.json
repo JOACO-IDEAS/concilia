@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
     "postinstall": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
@@ -22,13 +23,13 @@
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "papaparse": "^5.5.4",
-    "pdf-parse": "^2.4.5",
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.10.1",
     "resend": "^6.18.1",
     "tailwind-merge": "^3.6.0",
+    "unpdf": "^1.8.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
@@ -45,6 +46,7 @@
     "prisma": "^7.9.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
