@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { ArchivoParseado, FilaImportacion, MapeoColumnas } from "@/lib/import/types";
-import type { ResultadoImportacion } from "@/app/importar/actions";
+import type {
+  ArchivoParseado,
+  FilaImportacion,
+  ImportWizardConfig,
+  MapeoColumnas,
+  ResultadoImportacion,
+} from "@/lib/import/types";
 import { StepIndicator } from "./StepIndicator";
 import { StepUpload } from "./StepUpload";
 import { StepMapping } from "./StepMapping";
@@ -11,7 +16,13 @@ import { StepConfirm } from "./StepConfirm";
 
 type Paso = 1 | 2 | 3 | 4;
 
-export function ImportWizard() {
+/**
+ * Wizard de 4 pasos (Subir → Mapear → Revisar → Confirmar), genérico sobre
+ * cualquier "sabor" de importación — la config define los campos destino, la
+ * sugerencia de mapeo, la validación y la Server Action de confirmación. El
+ * wizard en sí no sabe si está importando organizaciones o unidades.
+ */
+export function ImportWizard({ config }: { config: ImportWizardConfig }) {
   const [paso, setPaso] = useState<Paso>(1);
   const [archivo, setArchivo] = useState<ArchivoParseado | null>(null);
   const [mapeo, setMapeo] = useState<MapeoColumnas>({});
@@ -32,6 +43,9 @@ export function ImportWizard() {
 
       {paso === 1 ? (
         <StepUpload
+          titulo={config.tituloUpload}
+          subtitulo={config.subtituloUpload}
+          sugerirMapeo={config.sugerirMapeo}
           onArchivoParseado={(archivoParseado, mapeoSugerido) => {
             setArchivo(archivoParseado);
             setMapeo(mapeoSugerido);
@@ -44,6 +58,8 @@ export function ImportWizard() {
         <StepMapping
           archivo={archivo}
           mapeoInicial={mapeo}
+          camposDestino={config.camposDestino}
+          validarFila={config.validarFila}
           onVolver={() => setPaso(1)}
           onContinuar={(mapeoFinal, filasConstruidas) => {
             setMapeo(mapeoFinal);
@@ -56,6 +72,8 @@ export function ImportWizard() {
       {paso === 3 ? (
         <StepPreview
           filas={filas}
+          camposDestino={config.camposDestino}
+          validarFila={config.validarFila}
           onFilasChange={setFilas}
           onVolver={() => setPaso(2)}
           onContinuar={() => setPaso(4)}
@@ -66,6 +84,10 @@ export function ImportWizard() {
         <StepConfirm
           filas={filas}
           resultado={resultado}
+          entidadPlural={config.entidadPlural}
+          notaActualizacion={config.notaActualizacion}
+          linkResultado={config.linkResultado}
+          confirmar={config.confirmar}
           onResultado={setResultado}
           onVolver={() => setPaso(3)}
           onReiniciar={reiniciar}

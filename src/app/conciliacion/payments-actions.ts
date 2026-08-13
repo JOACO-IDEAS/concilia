@@ -5,6 +5,9 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calcularSugerenciasSmartMatch, type SugerenciaSmartMatch } from "@/lib/payments/smart-match";
 import { notificarPagoMatched } from "@/lib/notifications/send-payment-notifications";
+import { requireCurrentAdministrator } from "@/lib/auth/session";
+import { requireOrganizationAccess } from "@/lib/auth/organization-access";
+import { requirePaymentAccess } from "@/lib/auth/resource-access";
 
 export interface PagoWebhookDTO {
   id: string;
@@ -41,13 +44,15 @@ export interface ListaPagosResultado {
  */
 export async function obtenerPagosWebhook(): Promise<ListaPagosResultado> {
   try {
+    const administrator = await requireCurrentAdministrator();
     const [pagos, organizaciones] = await Promise.all([
       prisma.paymentTransaction.findMany({
+        where: { organization: { administrators: { some: { administratorId: administrator.id } } } },
         orderBy: { createdAt: "desc" },
         take: 200,
         include: { organization: { select: { id: true, name: true } } },
       }),
-      prisma.organization.findMany({
+      prisma.organization.findMany({ where: { administrators: { some: { administratorId: administrator.id } } },
         select: { id: true, name: true, taxId: true },
         orderBy: { name: "asc" },
       }),
@@ -101,6 +106,10 @@ export async function vincularPagoManualmente(
   organizationId: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    const payment = await prisma.paymentTransaction.findUnique({ where: { id: paymentTransactionId }, select: { organizationId: true } });
+    if (!payment) return { ok: false, error: "Pago no disponible." };
+    await requireOrganizationAccess(organizationId);
+    if (payment.organizationId && payment.organizationId !== organizationId) return { ok: false, error: "No se puede vincular recursos de organizaciones distintas." };
     await prisma.paymentTransaction.update({
       where: { id: paymentTransactionId },
       data: { organizationId, status: "MATCHED", matchedAt: new Date(), matchMethod: "MANUAL" },
@@ -134,6 +143,7 @@ export async function vincularPagoManualmente(
 export async function obtenerSugerenciasSmartMatch(
   paymentTransactionId: string
 ): Promise<{ ok: boolean; sugerencias: SugerenciaSmartMatch[]; error?: string }> {
+  await requirePaymentAccess(paymentTransactionId);
   return calcularSugerenciasSmartMatch(paymentTransactionId);
 }
 
@@ -170,8 +180,9 @@ export interface BandejaInconsistenciasResultado {
  */
 export async function obtenerBandejaInconsistencias(): Promise<BandejaInconsistenciasResultado> {
   try {
+    const administrator = await requireCurrentAdministrator();
     const pagos = await prisma.paymentTransaction.findMany({
-      where: { status: "UNMATCHED" },
+      where: { status: "UNMATCHED", organization: { administrators: { some: { administratorId: administrator.id } } } },
       orderBy: { createdAt: "desc" },
       take: 30,
     });

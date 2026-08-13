@@ -11,6 +11,7 @@ export interface MovimientoExtraidoPDF {
   amount: number;
   concept: string;
   payerIdentifier: string | null;
+  referenceNumber: string | null; // número de comprobante/transacción, si el banco lo informa
   esEgreso: boolean; // débito/egreso — no se ofrece para importar como cobro
   lineaOriginal: string;
   externalId: string; // hash determinístico — misma línea reimportada = mismo id
@@ -150,6 +151,7 @@ export function extraerMovimientosDeTexto(texto: string): MovimientoExtraidoPDF[
       amount: Math.abs(montoExtraido.valor),
       concept: concepto,
       payerIdentifier: extraerIdentificadorPagador(concepto),
+      referenceNumber: null, // este parser heurístico no está en uso (ver ai-parser.ts); sin extracción de referencia
       esEgreso,
       lineaOriginal: fila,
       externalId: generarExternalId(fecha, Math.abs(montoExtraido.valor), concepto),

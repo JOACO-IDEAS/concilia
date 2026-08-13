@@ -41,10 +41,11 @@ export function StatementIngestionPanel() {
     creados: number;
     matched: number;
     unmatched: number;
+    noAtribuibles: number;
   } | null>(null);
 
   const importables = useMemo(
-    () => movimientos.filter((m) => !m.esEgreso && !m.yaImportado),
+    () => movimientos.filter((m) => !m.esEgreso && !m.yaImportado && m.puedeImportarse),
     [movimientos]
   );
 
@@ -144,17 +145,18 @@ export function StatementIngestionPanel() {
         amount: m.amount,
         concept: m.concept,
         payerIdentifier: m.payerIdentifier,
+        referenceNumber: m.referenceNumber,
         externalId: m.externalId,
         lineaOriginal: m.lineaOriginal,
       })),
       bankName
     );
-    setResultado({ creados: r.creados, matched: r.matched, unmatched: r.unmatched });
+    setResultado({ creados: r.creados, matched: r.matched, unmatched: r.unmatched, noAtribuibles: r.noAtribuibles });
     setConfirmando(false);
     setEstado("hecho");
     showToast(
       "Extracto importado",
-      `${r.matched} conciliados automáticamente · ${r.unmatched} a revisar abajo`
+      `${r.matched} incorporados · ${r.noAtribuibles} sin organización autorizada`
     );
     router.refresh();
   }
@@ -187,10 +189,12 @@ export function StatementIngestionPanel() {
             {resultado.unmatched > 0 ? (
               <Badge tone="amber">{resultado.unmatched} necesitan aprobación</Badge>
             ) : null}
+            {resultado.noAtribuibles > 0 ? <Badge tone="amber">{resultado.noAtribuibles} no se incorporaron</Badge> : null}
           </div>
-          <Button variant="outline" onClick={reiniciar} className="mt-2">
-            Cargar otro extracto
-          </Button>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <Button onClick={() => router.push("/")}>Ver trabajo en Inicio</Button>
+            <Button variant="outline" onClick={reiniciar}>Cargar otro extracto</Button>
+          </div>
         </div>
       </Card>
     );
@@ -223,8 +227,8 @@ export function StatementIngestionPanel() {
           </p>
           {movimientos.length - importables.length > 0 ? (
             <p className="text-xs text-slate-400">
-              {movimientos.length - importables.length} descartado
-              {movimientos.length - importables.length === 1 ? "" : "s"} (egresos o ya importados)
+              {movimientos.length - importables.length} no disponible
+              {movimientos.length - importables.length === 1 ? "" : "s"} (egresos, duplicados o sin organización autorizada)
             </p>
           ) : null}
           <div className="mt-2 flex items-center gap-2">

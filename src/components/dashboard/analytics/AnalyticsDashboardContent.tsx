@@ -36,16 +36,20 @@ export async function AnalyticsDashboardContent() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Recaudado / reconciliado (mes)"
-          value={formatARS(kpis.totalReconciliadoMes)}
-          deltaLabel="pagos conciliados este mes"
+          label="Recaudado / organización identificada (mes)"
+          value={formatARS(kpis.totalOrganizacionIdentificadaMes)}
+          deltaLabel="pagos con organización identificada este mes"
           icon={Wallet}
           tone="blue"
         />
         <StatCard
-          label="Reconciliación automática"
-          value={kpis.tasaReconciliacionAutomatica !== null ? `${kpis.tasaReconciliacionAutomatica}%` : "—"}
-          deltaLabel="matcheados por webhook vs. a mano"
+          label="Organización identificada automáticamente"
+          value={
+            kpis.tasaIdentificacionAutomaticaDeOrganizacion !== null
+              ? `${kpis.tasaIdentificacionAutomaticaDeOrganizacion}%`
+              : "—"
+          }
+          deltaLabel="matcheados por webhook vs. a mano — no implica UF ni obligación identificada"
           icon={Zap}
           tone="emerald"
         />

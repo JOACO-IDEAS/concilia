@@ -4,26 +4,26 @@ import { useState } from "react";
 import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
-import { importarOrganizaciones, type ResultadoImportacion } from "@/app/importar/actions";
-import type { FilaImportacion } from "@/lib/import/types";
-import {
-  ArrowLeft,
-  Loader2,
-  CheckCircle2,
-  RotateCcw,
-  DatabaseZap,
-  Building2,
-} from "lucide-react";
+import type { FilaImportacion, ResultadoImportacion } from "@/lib/import/types";
+import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, RotateCcw, DatabaseZap } from "lucide-react";
 
 export function StepConfirm({
   filas,
   resultado,
+  entidadPlural,
+  notaActualizacion,
+  linkResultado,
+  confirmar,
   onResultado,
   onVolver,
   onReiniciar,
 }: {
   filas: FilaImportacion[];
   resultado: ResultadoImportacion | null;
+  entidadPlural: string;
+  notaActualizacion: string;
+  linkResultado?: { href: string; label: string };
+  confirmar: (filas: FilaImportacion[]) => Promise<ResultadoImportacion>;
   onResultado: (r: ResultadoImportacion | null) => void;
   onVolver: () => void;
   onReiniciar: () => void;
@@ -34,20 +34,11 @@ export function StepConfirm({
 
   const incluidas = filas.filter((f) => f.incluida);
 
-  async function confirmar() {
+  async function confirmarClick() {
     setEnviando(true);
     setErrorConexion(null);
     try {
-      const payload = incluidas.map((f) => ({
-        name: f.valores.name,
-        taxId: f.valores.tax_id,
-        contactName: f.valores.contact_name,
-        contactEmail: f.valores.contact_email,
-        contactPhone: f.valores.contact_phone,
-        billingEmail: f.valores.billing_email,
-        cbuAlias: f.valores.cbu_alias,
-      }));
-      const r = await importarOrganizaciones(payload);
+      const r = await confirmar(incluidas);
       onResultado(r);
       if (r.ok) {
         showToast(
@@ -103,7 +94,7 @@ export function StepConfirm({
               <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-900">
                 {resultado.errores.map((e) => (
                   <li key={e.fila} className="text-rose-600 dark:text-rose-400">
-                    Fila {e.fila} ({e.organizacion}): {e.mensaje}
+                    Fila {e.fila} ({e.etiqueta}): {e.mensaje}
                   </li>
                 ))}
               </ul>
@@ -117,12 +108,14 @@ export function StepConfirm({
             >
               <RotateCcw size={14} /> Importar otro archivo
             </button>
-            <Link
-              href="/consorcios"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              <Building2 size={14} /> Ver consorcios
-            </Link>
+            {linkResultado ? (
+              <Link
+                href={linkResultado.href}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                {linkResultado.label} <ArrowRight size={14} />
+              </Link>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -137,7 +130,7 @@ export function StepConfirm({
       />
       <div className="p-5">
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Se van a crear o actualizar <strong>{incluidas.length}</strong> organizaciones
+          Se van a crear o actualizar <strong>{incluidas.length}</strong> {entidadPlural}
           {filas.length !== incluidas.length ? (
             <>
               {" "}
@@ -146,7 +139,7 @@ export function StepConfirm({
               errores sin corregir)
             </>
           ) : null}
-          . Los consorcios que ya existan (mismo CUIT) se actualizan en vez de duplicarse.
+          . {notaActualizacion}
         </p>
 
         {errorConexion ? (
@@ -168,7 +161,7 @@ export function StepConfirm({
             <ArrowLeft size={14} /> Volver
           </button>
           <button
-            onClick={confirmar}
+            onClick={confirmarClick}
             disabled={enviando || incluidas.length === 0}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >

@@ -13,12 +13,34 @@ import {
 } from "@/lib/statements/ai-parser";
 import { reconcilePayment } from "@/lib/payments/reconcile-payment";
 import { notificarPagoMatched, notificarPagoUnmatched } from "@/lib/notifications/send-payment-notifications";
+import { ejecutarEvaluacionSombraCompleta } from "@/lib/payment-evidence/evidence-score-runner";
+import { requireCurrentAdministrator } from "@/lib/auth/session";
+import { requireOrganizationAccess } from "@/lib/auth/organization-access";
+import { appendProductEventSafely } from "@/lib/product-observability/runtime";
 
 const PROVIDER = "pdf_statement";
 
 export interface MovimientoPreviewDTO extends MovimientoExtraidoPDF {
   yaImportado: boolean;
   organizationPropuesta: { id: string; name: string } | null;
+  puedeImportarse: boolean;
+}
+
+class MovimientoNoAtribuibleError extends Error {
+  constructor() {
+    super("El movimiento no se pudo atribuir a una organización disponible.");
+    this.name = "MovimientoNoAtribuibleError";
+  }
+}
+
+/** El motor propone; la aplicación verifica que el administrador pueda operar la organización propuesta. */
+async function exigirOrganizacionAutorizada(organizationId: string | null): Promise<void> {
+  if (!organizationId) throw new MovimientoNoAtribuibleError();
+  try {
+    await requireOrganizationAccess(organizationId);
+  } catch {
+    throw new MovimientoNoAtribuibleError();
+  }
 }
 
 export interface PreviewExtractoResultado {
@@ -41,6 +63,7 @@ export interface PreviewExtractoResultado {
  * nada en la base — `reconcilePayment` es puramente de lectura.
  */
 export async function previsualizarExtractoPDF(formData: FormData): Promise<PreviewExtractoResultado> {
+  await requireCurrentAdministrator();
   const archivo = formData.get("file");
   if (!(archivo instanceof File)) {
     return { ok: false, error: "No se recibió ningún archivo." };
@@ -81,18 +104,25 @@ export async function previsualizarExtractoPDF(formData: FormData): Promise<Prev
     for (const mov of movimientos) {
       const yaImportado = yaImportadosSet.has(mov.externalId);
       let organizationPropuesta: { id: string; name: string } | null = null;
+      let puedeImportarse = false;
 
       if (!mov.esEgreso && !yaImportado) {
         const reconciliacion = await reconcilePayment(mov.payerIdentifier);
         if (reconciliacion.status === "MATCHED" && reconciliacion.organizationId) {
-          organizationPropuesta = await prisma.organization.findUnique({
-            where: { id: reconciliacion.organizationId },
-            select: { id: true, name: true },
-          });
+          try {
+            await exigirOrganizacionAutorizada(reconciliacion.organizationId);
+            organizationPropuesta = await prisma.organization.findUnique({
+              where: { id: reconciliacion.organizationId },
+              select: { id: true, name: true },
+            });
+            puedeImportarse = organizationPropuesta !== null;
+          } catch {
+            // No se revela ni se incorpora una organización fuera del alcance.
+          }
         }
       }
 
-      movimientosPreview.push({ ...mov, yaImportado, organizationPropuesta });
+      movimientosPreview.push({ ...mov, yaImportado, organizationPropuesta, puedeImportarse });
     }
 
     return {
@@ -116,6 +146,7 @@ export interface MovimientoParaConfirmar {
   amount: number;
   concept: string;
   payerIdentifier: string | null;
+  referenceNumber: string | null;
   externalId: string;
   lineaOriginal: string;
 }
@@ -131,6 +162,7 @@ export interface ConfirmarExtractoResultado {
   duplicados: number;
   matched: number;
   unmatched: number;
+  noAtribuibles: number;
   errores: ErrorMovimientoConfirmacion[];
 }
 
@@ -148,13 +180,16 @@ export async function confirmarExtractoPDF(
   movimientos: MovimientoParaConfirmar[],
   bankName?: string | null
 ): Promise<ConfirmarExtractoResultado> {
+  const administrator = await requireCurrentAdministrator();
   const provider = bankName?.trim() || PROVIDER;
   let creados = 0;
   let duplicados = 0;
   let matched = 0;
   let unmatched = 0;
+  let noAtribuibles = 0;
   const errores: ErrorMovimientoConfirmacion[] = [];
   const paraNotificar: { id: string; status: PaymentTransactionStatus }[] = [];
+  const importadosPorOrganizacion = new Map<string, number>();
 
   for (const mov of movimientos) {
     try {
@@ -169,6 +204,7 @@ export async function confirmarExtractoPDF(
 
       const resultado = await prisma.$transaction(async (tx) => {
         const reconciliacion = await reconcilePayment(mov.payerIdentifier, tx);
+        await exigirOrganizacionAutorizada(reconciliacion.status === "MATCHED" ? reconciliacion.organizationId : null);
         const creado = await tx.paymentTransaction.create({
           data: {
             externalId: mov.externalId,
@@ -177,6 +213,13 @@ export async function confirmarExtractoPDF(
             currency: "ARS",
             payerIdentifier: mov.payerIdentifier,
             concept: mov.concept,
+            // Fase 3.2 — fecha real del movimiento (no `createdAt`, que sigue
+            // siendo cuándo ConcilIA creó el registro) y número de
+            // comprobante, cuando el extracto los trae. `mov.fecha` ya viene
+            // validada como YYYY-MM-DD (ver el filtro en
+            // convertirATransaccionesPipeline / normalizarFecha).
+            transactionDate: new Date(mov.fecha),
+            referenceNumber: mov.referenceNumber,
             rawPayload: {
               source: PROVIDER,
               fileName,
@@ -195,7 +238,15 @@ export async function confirmarExtractoPDF(
       if (resultado.reconciliacion.status === "MATCHED") matched++;
       else unmatched++;
       paraNotificar.push({ id: resultado.creado.id, status: resultado.reconciliacion.status });
+      if (resultado.reconciliacion.organizationId) {
+        importadosPorOrganizacion.set(resultado.reconciliacion.organizationId, (importadosPorOrganizacion.get(resultado.reconciliacion.organizationId) ?? 0) + 1);
+      }
     } catch (e) {
+      if (e instanceof MovimientoNoAtribuibleError) {
+        noAtribuibles++;
+        errores.push({ externalId: mov.externalId, mensaje: e.message });
+        continue;
+      }
       if (esErrorDeConstraintUnico(e)) {
         // Carrera con otra ingesta del mismo movimiento — el constraint
         // único de externalId es la red de seguridad final (mismo patrón
@@ -225,7 +276,27 @@ export async function confirmarExtractoPDF(
     ).catch(() => {});
   });
 
-  return { ok: errores.length === 0, creados, duplicados, matched, unmatched, errores };
+  // Fase 3.4/5.9 — motor de matching + evidence-score en MODO SOMBRA,
+  // siempre DESPUÉS de que el pago ya está confirmado y de responder (mismo
+  // patrón `after()` que las notificaciones arriba).
+  // `ejecutarEvaluacionSombraCompleta` nunca lanza — un error acá jamás
+  // puede tirar abajo la importación, que ya terminó. Corre para TODO pago
+  // creado, esté MATCHED o UNMATCHED a nivel organización — el motor de
+  // unidad decide solo con lo que encuentre. Fase 5.9 — reemplaza a
+  // ejecutarMatchingEnSombra (shadow-runner.ts, sin tocar): mismo efecto
+  // sobre ShadowMatchLog, más la persistencia nueva de evidence-score.ts.
+  after(() => {
+    Promise.all(paraNotificar.map(({ id }) => ejecutarEvaluacionSombraCompleta(id))).catch(() => {});
+  });
+
+  // Sólo después de una importación completa y exitosa. El append es auxiliar.
+  if (errores.length === 0) {
+    await Promise.all([...importadosPorOrganizacion].map(([organizationId, createdCount]) =>
+      appendProductEventSafely({ administratorId: administrator.id, organizationId, type: "STATEMENT_IMPORT_CONFIRMED", metadata: { createdCount, duplicateCount: 0, unattributableCount: 0 } })
+    ));
+  }
+
+  return { ok: errores.length === 0, creados, duplicados, matched, unmatched, noAtribuibles, errores };
 }
 
 function esErrorDeConstraintUnico(e: unknown): boolean {

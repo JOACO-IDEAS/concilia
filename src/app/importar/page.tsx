@@ -1,5 +1,5 @@
 import { Topbar } from "@/components/layout/Topbar";
-import { ImportWizard } from "@/components/import/ImportWizard";
+import { OrganizacionesImportWizard } from "@/components/import/OrganizacionesImportWizard";
 
 export default function ImportarPage() {
   return (
@@ -9,7 +9,7 @@ export default function ImportarPage() {
         subtitle="Cargá consorcios, contactos y datos de facturación desde Excel o CSV"
       />
       <main className="flex-1 p-4 sm:p-6">
-        <ImportWizard />
+        <OrganizacionesImportWizard />
       </main>
     </>
   );

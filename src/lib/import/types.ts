@@ -1,14 +1,14 @@
-// Tipos compartidos por el Módulo de Importación Asistida (onboarding masivo
-// de consorcios vía Excel/CSV). Ver src/components/import/ImportWizard.tsx.
+// Tipos compartidos por el Módulo de Importación Asistida — reutilizable por
+// distintos "sabores" de importación (organizaciones, unidades funcionales),
+// no solo el onboarding masivo de consorcios con el que arrancó este módulo.
+// Ver src/components/import/ImportWizard.tsx.
 
-export type CampoDestino =
-  | "name"
-  | "tax_id"
-  | "contact_name"
-  | "contact_email"
-  | "contact_phone"
-  | "billing_email"
-  | "cbu_alias";
+// Antes era una unión cerrada de literales específicos de organizaciones
+// ("name" | "tax_id" | ...). Se ensancha a `string` a propósito para que el
+// mismo wizard sirva para cualquier set de campos destino (cada sabor define
+// el suyo) sin necesitar un tipo genérico por flavor — el resto de este
+// archivo ya era estructuralmente compatible con eso.
+export type CampoDestino = string;
 
 export interface CampoDestinoConfig {
   campo: CampoDestino;
@@ -18,7 +18,7 @@ export interface CampoDestinoConfig {
 }
 
 // Orden de despliegue en el Paso 2 (mapeo) y Paso 3 (preview) — coincide con
-// el orden pedido en los requerimientos del módulo.
+// el orden pedido en los requerimientos del módulo original de organizaciones.
 export const CAMPOS_DESTINO: CampoDestinoConfig[] = [
   {
     campo: "name",
@@ -87,4 +87,41 @@ export interface ArchivoParseado {
   headers: string[];
   filas: string[][]; // filas crudas tal como vienen del archivo, sin mapear todavía
   totalFilasOriginal: number; // por si se truncó por LIMITE_FILAS
+}
+
+// Resultado de una importación — genérico por diseño: no importa si la fila
+// representa una organización o una unidad, el resumen (creadas/actualizadas/
+// errores) tiene la misma forma. `etiqueta` en el error es el texto legible
+// para identificar la fila (nombre de organización, código de unidad, etc.),
+// no un campo específico de un dominio.
+export interface ErrorFilaImportacion {
+  fila: number; // 1-indexado, para mostrarle al usuario
+  etiqueta: string;
+  mensaje: string;
+}
+
+export interface ResultadoImportacion {
+  ok: boolean;
+  creadas: number;
+  actualizadas: number;
+  errores: ErrorFilaImportacion[];
+}
+
+/**
+ * Contrato que necesita `ImportWizard` para servir cualquier "sabor" de
+ * importación — hoy Organizaciones (`/importar`) y Unidades/Titulares
+ * (`/unidades-config`, Fase 2). El wizard en sí (`ImportWizard.tsx` y sus 4
+ * pasos) no conoce ningún campo ni ninguna Server Action específica: todo
+ * eso vive acá, provisto por quien arma la config.
+ */
+export interface ImportWizardConfig {
+  tituloUpload: string;
+  subtituloUpload: string;
+  camposDestino: CampoDestinoConfig[];
+  sugerirMapeo: (headers: string[]) => MapeoColumnas;
+  validarFila: (valores: Record<CampoDestino, string>) => ProblemaValidacion[];
+  confirmar: (filas: FilaImportacion[]) => Promise<ResultadoImportacion>;
+  entidadPlural: string; // ej. "organizaciones" / "unidades" — para la copy genérica de StepConfirm
+  notaActualizacion: string; // ej. "Los consorcios que ya existan (mismo CUIT) se actualizan..."
+  linkResultado?: { href: string; label: string };
 }

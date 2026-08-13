@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 /**
  * Bandeja de Trabajo — la pantalla principal de ConciliIA. Responde
  * exactamente 3 preguntas y nada más (ver PRODUCT_BLUEPRINT.md):
- *   1. ¿Cuántos pagos se procesaron automáticamente?
+ *   1. ¿En cuántos pagos identificamos la organización automáticamente?
  *   2. ¿Qué requiere mi atención humana?
  *   3. ¿Qué puedo ejecutar ahora? (cobranza de mora)
  * Sin gráficos, sin widgets, sin métricas adicionales. La carga manual de
@@ -35,10 +35,10 @@ export default async function BandejaDeTrabajoPage() {
           {resumen.ok ? (
             <>
               <span className="font-semibold text-slate-900 dark:text-slate-50">
-                {resumen.autoConciliados}
+                {resumen.organizacionAutoResuelta}
               </span>{" "}
-              pago{resumen.autoConciliados === 1 ? "" : "s"} conciliado
-              {resumen.autoConciliados === 1 ? "" : "s"} automáticamente.
+              pago{resumen.organizacionAutoResuelta === 1 ? "" : "s"} con organización identificada
+              automáticamente.
             </>
           ) : null}{" "}
           {pendientes > 0 ? (

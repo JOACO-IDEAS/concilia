@@ -3,22 +3,14 @@
 import { useMemo } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { CAMPOS_DESTINO, type CampoDestino, type FilaImportacion } from "@/lib/import/types";
-import { validarFila, tieneErroresBloqueantes } from "@/lib/import/validation";
+import type {
+  CampoDestino,
+  CampoDestinoConfig,
+  FilaImportacion,
+  ProblemaValidacion,
+} from "@/lib/import/types";
+import { tieneErroresBloqueantes } from "@/lib/import/validation";
 import { ArrowLeft, ArrowRight, CircleAlert, CircleCheck, CircleHelp } from "lucide-react";
-
-function recalcularFila(fila: FilaImportacion, campo: CampoDestino, valor: string): FilaImportacion {
-  const valores = { ...fila.valores, [campo]: valor };
-  const problemas = validarFila(valores);
-  return {
-    ...fila,
-    valores,
-    problemas,
-    // si la edición resuelve los errores, se puede volver a incluir sola;
-    // si aparece un error nuevo, se desmarca para forzar la revisión.
-    incluida: !tieneErroresBloqueantes(problemas),
-  };
-}
 
 function inputClassName(severidad?: "error" | "warning") {
   if (severidad === "error") return "border-rose-300 dark:border-rose-500/40";
@@ -28,15 +20,32 @@ function inputClassName(severidad?: "error" | "warning") {
 
 export function StepPreview({
   filas,
+  camposDestino,
+  validarFila,
   onFilasChange,
   onVolver,
   onContinuar,
 }: {
   filas: FilaImportacion[];
+  camposDestino: CampoDestinoConfig[];
+  validarFila: (valores: Record<CampoDestino, string>) => ProblemaValidacion[];
   onFilasChange: (filas: FilaImportacion[]) => void;
   onVolver: () => void;
   onContinuar: () => void;
 }) {
+  function recalcularFila(fila: FilaImportacion, campo: CampoDestino, valor: string): FilaImportacion {
+    const valores = { ...fila.valores, [campo]: valor };
+    const problemas = validarFila(valores);
+    return {
+      ...fila,
+      valores,
+      problemas,
+      // si la edición resuelve los errores, se puede volver a incluir sola;
+      // si aparece un error nuevo, se desmarca para forzar la revisión.
+      incluida: !tieneErroresBloqueantes(problemas),
+    };
+  }
+
   function actualizarValor(id: string, campo: CampoDestino, valor: string) {
     onFilasChange(filas.map((f) => (f.id === id ? recalcularFila(f, campo, valor) : f)));
   }
@@ -106,7 +115,7 @@ export function StepPreview({
                 {bloqueada ? <Badge tone="red">Con errores</Badge> : null}
               </div>
               <div className="space-y-2.5">
-                {CAMPOS_DESTINO.map((campo) => {
+                {camposDestino.map((campo) => {
                   const problema = fila.problemas.find((p) => p.campo === campo.campo);
                   return (
                     <div key={campo.campo}>
@@ -144,7 +153,7 @@ export function StepPreview({
           <thead>
             <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
               <th className="w-10 px-4 py-2.5" />
-              {CAMPOS_DESTINO.map((c) => (
+              {camposDestino.map((c) => (
                 <th key={c.campo} className="px-3 py-2.5 font-medium">
                   {c.etiqueta}
                 </th>
@@ -165,7 +174,7 @@ export function StepPreview({
                       className="mt-1.5 h-3.5 w-3.5 rounded border-slate-300"
                     />
                   </td>
-                  {CAMPOS_DESTINO.map((campo) => {
+                  {camposDestino.map((campo) => {
                     const problema = fila.problemas.find((p) => p.campo === campo.campo);
                     return (
                       <td key={campo.campo} className="min-w-[150px] px-3 py-2 align-top">

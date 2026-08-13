@@ -4,6 +4,8 @@ export interface PagoExtraido {
   currency: string;
   payerIdentifier: string | null;
   concept: string | null;
+  transactionDate: Date | null;
+  referenceNumber: string | null;
   provider: string;
 }
 
@@ -21,6 +23,17 @@ function aTexto(valor: unknown): string | null {
   if (valor === undefined || valor === null) return null;
   const texto = String(valor).trim();
   return texto === "" ? null : texto;
+}
+
+// Solo strings, a propósito: un timestamp numérico es ambiguo (¿segundos o
+// milisegundos desde epoch?) sin un proveedor real contra el cual confirmar
+// la convención — adivinar la unidad podría persistir una fecha incorrecta,
+// peor que no persistir ninguna. La convención de fecha en JSON de webhooks
+// es casi siempre string (ISO 8601 u otro formato parseable por Date).
+function aFecha(valor: unknown): Date | null {
+  if (typeof valor !== "string" || !valor.trim()) return null;
+  const fecha = new Date(valor);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
 }
 
 function aNumero(valor: unknown): number | null {
@@ -99,7 +112,28 @@ export function extraerPagoDelPayload(
     primero(raiz, ["concept", "reference", "description", "detail", "concepto"])
   );
 
+  // Fase 3.2 — mismo patrón de variantes de nombre que el resto de este
+  // archivo (ver docstring). Nombres deliberadamente distintos de los que ya
+  // usa `concept` arriba (ej. "reference" ya está tomado por concept) para
+  // no cambiar el mapeo de ningún campo existente.
+  const transactionDate = aFecha(
+    primero(raiz, ["transaction_date", "value_date", "date", "fecha", "movement_date"])
+  );
+
+  const referenceNumber = aTexto(
+    primero(raiz, ["reference_number", "receipt_number", "voucher_number", "comprobante", "nro_comprobante"])
+  );
+
   const provider = aTexto(primero(payload, ["provider", "source"])) ?? providerDeHeader ?? "generic";
 
-  return { externalId, amount, currency, payerIdentifier, concept, provider };
+  return {
+    externalId,
+    amount,
+    currency,
+    payerIdentifier,
+    concept,
+    transactionDate,
+    referenceNumber,
+    provider,
+  };
 }

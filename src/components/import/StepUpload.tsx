@@ -4,14 +4,19 @@ import { useCallback, useRef, useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { UploadCloud, FileWarning, Loader2, FileSpreadsheet } from "lucide-react";
 import { parsearArchivo, ArchivoNoSoportadoError } from "@/lib/import/parse-file";
-import { sugerirMapeo } from "@/lib/import/validation";
 import type { ArchivoParseado, MapeoColumnas } from "@/lib/import/types";
 
 type Estado = "idle" | "procesando" | "error";
 
 export function StepUpload({
+  titulo,
+  subtitulo,
+  sugerirMapeo,
   onArchivoParseado,
 }: {
+  titulo: string;
+  subtitulo: string;
+  sugerirMapeo: (headers: string[]) => MapeoColumnas;
   onArchivoParseado: (archivo: ArchivoParseado, mapeoSugerido: MapeoColumnas) => void;
 }) {
   const [estado, setEstado] = useState<Estado>("idle");
@@ -37,15 +42,12 @@ export function StepUpload({
         );
       }
     },
-    [onArchivoParseado]
+    [onArchivoParseado, sugerirMapeo]
   );
 
   return (
     <Card className="animate-fade-in-up">
-      <CardHeader
-        title="Importar consorcios desde Excel o CSV"
-        subtitle="Subí una planilla con tus clientes y te ayudamos a mapear las columnas antes de cargarlos"
-      />
+      <CardHeader title={titulo} subtitle={subtitulo} />
       <div className="p-5">
         <div
           onDragOver={(e) => {

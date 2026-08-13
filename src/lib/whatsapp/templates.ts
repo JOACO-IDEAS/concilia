@@ -18,7 +18,7 @@ export function plantillaReciboPagoWhatsApp(datos: DatosReciboPagoWhatsApp): str
   return [
     `*Pago recibido — ${monto}*`,
     "",
-    `Se registró y concilió un pago para *${datos.organizationName}*. El comprobante ya está disponible en el panel de ConcilIA.`,
+    `Se registró un pago y se identificó automáticamente a *${datos.organizationName}* como la organización dueña. El comprobante ya está disponible en el panel de ConcilIA — la unidad y la obligación correspondientes se identifican en un paso posterior.`,
     "",
     `Fecha: ${fecha}`,
     `Nº de transacción: ${datos.transactionId}`,

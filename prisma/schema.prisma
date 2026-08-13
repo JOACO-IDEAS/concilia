@@ -123,6 +123,52 @@ enum ReconciliationDecision {
   EXCEPTION
 }
 
+// Estado de un PaymentNotice (Fase 3.2 — ver FASE_3_1_PREPARACION_DE_DATOS.md
+// §7). Puramente informativo del ciclo de vida del aviso — nunca implica que
+// el dinero haya ingresado al banco; eso lo sigue confirmando únicamente
+// PaymentTransaction.
+enum PaymentNoticeStatus {
+  RECEIVED // recién llegó, sin procesar todavía
+  EXTRACTED // se corrió extracción sobre el adjunto/texto del mensaje
+  MATCHED_PENDING // se generaron candidatos (Unit/UnitOwner/PaymentTransaction), esperando decisión
+  LINKED // vinculado a un PaymentTransaction real — el dinero SÍ se confirmó
+  DISCARDED // no correspondía a nada real, duplicado, o nunca se confirmó y se cerró
+}
+
+// Estado de un resultado de matching en MODO SOMBRA (Fase 3.3/3.4/3.5 — ver
+// src/lib/reconciliation/types.ts::CandidateStatus, el mismo tipo a nivel de
+// código). Deliberadamente NO incluye "AUTO": el motor sombra nunca produce
+// ni puede producir ese valor — ver deterministic-matcher.ts/confidence-engine.ts.
+enum ShadowMatchStatus {
+  CANDIDATE
+  AMBIGUOUS
+  BLOCKED
+}
+
+// Fase 5.9 — estados de src/lib/reconciliation/../payment-evidence/evidence-score.ts
+// (Fase 5.7, sin cambios de lógica). Deliberadamente distinto de
+// ShadowMatchStatus: responde una pregunta distinta (convergencia de
+// FAMILIAS de evidencia, no solo el resultado del motor bancario) — ver
+// FASE_5_7_PAYMENT_EVIDENCE_SCORE_DESIGN.md Parte 6. Nunca incluye "AUTO":
+// RECONCILIATION_CONFIRMED es una clasificación calculada en memoria, jamás
+// una escritura ni una acción — ver FASE_5_7_INFORME_IMPLEMENTACION.md §11.
+enum PaymentEvidenceState {
+  INFORMATIONAL
+  NEEDS_DATA
+  NEEDS_DECISION
+  PRE_CONCILIABLE
+  RECONCILIATION_CONFIRMED
+}
+
+// Eventos opacos y append-only de protección de acceso piloto. No contienen
+// email, IP, token ni hashes reutilizables: subjectKey es un HMAC con dominio.
+enum PilotAccessRateLimitScope {
+  ISSUE_EMAIL
+  ISSUE_IP
+  CONSUME_TOKEN
+  CONSUME_IP
+}
+
 // ----------------------------------------------------------------------------
 // Administrator — el actor que gestiona una o varias Organization.
 // ----------------------------------------------------------------------------
@@ -132,6 +178,7 @@ model Administrator {
   email String @unique
 
   organizations OrganizationAdministrator[]
+  pilotAccessTokens PilotAccessToken[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -139,6 +186,31 @@ model Administrator {
 
   @@index([email])
   @@map("administrators")
+}
+
+model PilotAccessToken {
+  id              String @id @default(cuid())
+  administratorId String
+  tokenHash       String @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime @default(now())
+  administrator   Administrator @relation(fields: [administratorId], references: [id], onDelete: Cascade)
+  @@index([administratorId])
+  @@index([expiresAt])
+  @@map("pilot_access_tokens")
+}
+
+model PilotAccessRateLimitEvent {
+  id         String                    @id @default(cuid())
+  scope      PilotAccessRateLimitScope
+  subjectKey String
+  createdAt  DateTime                  @default(now())
+
+  @@index([scope, subjectKey, createdAt])
+  @@index([createdAt])
+  @@map("pilot_access_rate_limit_events")
 }
 
 // Tabla intermedia N:M entre Administrator y Organization.
@@ -172,13 +244,20 @@ model Organization {
   address String
   status  OrganizationStatus @default(ACTIVE)
 
-  administrators      OrganizationAdministrator[]
-  contacts            ContactOrganization[]
-  channels            ContactChannel[]
-  billingProfiles     BillingProfile[]
-  paymentTransactions PaymentTransaction[]
-  paymentReminders    PaymentReminder[]
-  units               Unit[]
+  administrators        OrganizationAdministrator[]
+  contacts              ContactOrganization[]
+  channels              ContactChannel[]
+  billingProfiles       BillingProfile[]
+  paymentTransactions   PaymentTransaction[]
+  paymentReminders      PaymentReminder[]
+  units                 Unit[]
+  paymentNotices        PaymentNotice[]
+  // Fase 4 Parte C — Compliance Foundation. Relaciones inversas obligatorias
+  // de Prisma (sintaxis, no crean ninguna columna real en esta tabla) — ver
+  // ProviderOrganization/ProviderDocument más abajo.
+  providerOrganizations ProviderOrganization[]
+  providerDocuments     ProviderDocument[]
+  agentObservations     AgentObservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -340,6 +419,14 @@ model PaymentTransaction {
   payerIdentifier String?
   concept         String? // referencia / concepto del pago, si el proveedor lo manda
 
+  // Fase 3.2 — preservan datos que el pipeline de extracción (IA o webhook)
+  // ya obtiene pero que antes se descartaban antes de persistir (ver
+  // FASE_3_1_PREPARACION_DE_DATOS.md §1). Ninguna reemplaza a `createdAt`:
+  // `createdAt` sigue significando "cuándo ConcilIA creó el registro";
+  // `transactionDate` es cuándo ocurrió el movimiento bancario real.
+  transactionDate DateTime? // fecha real del movimiento, si se pudo extraer
+  referenceNumber String? // número de comprobante/transacción, si el banco/proveedor lo informa
+
   status      PaymentTransactionStatus @default(PENDING)
   matchedAt   DateTime? // se completa cuando status pasa a MATCHED (automático o manual)
   matchMethod PaymentMatchMethod? // AUTO (motor de reconciliación) o MANUAL (vínculo a mano) — null mientras no esté MATCHED
@@ -347,6 +434,13 @@ model PaymentTransaction {
   rawPayload Json // payload crudo tal como llegó — para auditoría y debugging
 
   reconciliationMatches ReconciliationMatch[]
+  paymentNotices        PaymentNotice[]
+  shadowMatchLogs       ShadowMatchLog[]
+  paymentEvidenceAssessmentLogs PaymentEvidenceAssessmentLog[]
+  // Fase 4.F — relación inversa obligatoria de Prisma (sintaxis, cero
+  // columna real nueva acá). Ver AgentObservation.paymentTransactionId más
+  // abajo — la columna real vive en AgentObservation, no acá.
+  agentObservations     AgentObservation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -407,6 +501,9 @@ model Unit {
   obligations         Obligation[]
   matches             ReconciliationMatch[]
   paymentTransactions PaymentTransaction[]
+  paymentNotices      PaymentNotice[]
+  shadowMatchLogs     ShadowMatchLog[]
+  paymentEvidenceAssessmentLogs PaymentEvidenceAssessmentLog[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -437,7 +534,9 @@ model UnitOwner {
   phone        String?
   isPrimary    Boolean          @default(true) // co-titularidad — mismo criterio que ContactOrganization.isPrimaryContact
 
-  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unit            Unit             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  paymentNotices  PaymentNotice[]
+  shadowMatchLogs ShadowMatchLog[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -448,6 +547,10 @@ model UnitOwner {
   @@unique([unitId, taxId])
   @@index([unitId])
   @@index([taxId])
+  // Fase 3.2 — soporta la resolución de identidad por teléfono/WhatsApp
+  // (ver FASE_3_1_PREPARACION_DE_DATOS.md §6.4): sin este índice, buscar
+  // "a quién pertenece este número" escanearía toda la tabla.
+  @@index([phone])
   @@map("unit_owners")
 }
 
@@ -468,8 +571,9 @@ model Obligation {
   dueDate     DateTime?
   externalRef String? // referencia/identificador del sistema de origen, si existe (ej. nro de liquidación)
 
-  unit    Unit                  @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  matches ReconciliationMatch[]
+  unit            Unit                  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  matches         ReconciliationMatch[]
+  shadowMatchLogs ShadowMatchLog[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -529,4 +633,566 @@ model ReconciliationMatch {
   @@index([obligationId])
   @@index([decision])
   @@map("reconciliation_matches")
+}
+
+// ----------------------------------------------------------------------------
+// PaymentNotice — Fase 3.2 (ver FASE_3_1_PREPARACION_DE_DATOS.md §7 y la
+// tabla de decisiones de RECONCILIATION_MATCHING_ARCHITECTURE.md). Modela un
+// comprobante/aviso de pago recibido (a futuro, por WhatsApp) — es
+// estrictamente "alguien afirma haber pagado", NUNCA "el banco confirmó el
+// pago". La única fuente de verdad de que el dinero se movió sigue siendo
+// PaymentTransaction, sin cambios.
+//
+// Este modelo es únicamente infraestructura de datos en esta fase: no hay
+// ningún código que lo cree, lo lea, ni lo correlacione todavía (no hay
+// webhook de WhatsApp, no hay procesamiento automático, no hay matching). Un
+// PaymentNotice NUNCA se convierte automáticamente en un PaymentTransaction
+// — esa dirección de conversión está prohibida por diseño, no solo por
+// buena práctica.
+model PaymentNotice {
+  id             String        @id @default(cuid())
+  organizationId String? // nullable — puede no saberse todavía a qué organización pertenece (teléfono ambiguo entre organizaciones)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  phone      String // número de origen del mensaje, normalizado
+  receivedAt DateTime @default(now())
+
+  amount      Decimal?  @db.Decimal(14, 2) // lo que el remitente afirma haber pagado — NO confirmado
+  claimedDate DateTime? // fecha que el remitente afirma (texto o comprobante)
+  reference   String? // número de comprobante que menciona, si lo hay
+
+  attachmentUrl String? // dónde vive el archivo adjunto (imagen/PDF) — mecanismo de storage fuera de alcance de esta fase
+  extractedText String? // texto crudo extraído del mensaje/adjunto
+  extractedData Json? // salida estructurada de la extracción — mismo criterio que PaymentTransaction.rawPayload
+
+  status PaymentNoticeStatus @default(RECEIVED)
+
+  linkedPaymentTransactionId String?
+  linkedPaymentTransaction   PaymentTransaction? @relation(fields: [linkedPaymentTransactionId], references: [id], onDelete: SetNull)
+  linkedUnitId               String?
+  linkedUnit                 Unit?               @relation(fields: [linkedUnitId], references: [id], onDelete: SetNull)
+  linkedUnitOwnerId          String?
+  linkedUnitOwner            UnitOwner?          @relation(fields: [linkedUnitOwnerId], references: [id], onDelete: SetNull)
+
+  confidence Int? // 0-99, mismo rango que ReconciliationMatch.score — null hasta que se calcule (fase futura)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([phone])
+  @@index([status])
+  @@index([linkedPaymentTransactionId])
+  @@map("payment_notices")
+}
+
+// ----------------------------------------------------------------------------
+// ShadowMatchLog — Fase 3.5 (ver FASE_3_4_IMPLEMENTATION_PLAN.md §2 para la
+// decisión Opción B, y FASE_3_1.../RECONCILIATION_MATCHING_ARCHITECTURE.md
+// para el diseño del motor). Persistencia durable del resultado del motor de
+// matching en MODO SOMBRA — reemplaza al InMemoryShadowResultStore de la
+// Fase 3.4, que no sobrevivía entre invocaciones serverless.
+//
+// Deliberadamente SEPARADO de ReconciliationMatch, que es append-only por
+// diseño (cada fila = un evento de decisión real, nunca se actualiza). Este
+// modelo necesita exactamente lo opuesto: upsert idempotente por
+// (paymentTransactionId, engineVersion) — reevaluar la MISMA versión de
+// motor sobre el mismo pago actualiza la fila existente, nunca duplica. Una
+// engineVersion DISTINTA sí genera una fila independiente, a propósito, para
+// poder comparar cómo cambió el resultado al recalibrar pesos/reglas/
+// thresholds (ver §11 de RECONCILIATION_MATCHING_ARCHITECTURE.md).
+//
+// Es puramente OBSERVACIÓN: ninguna fila de esta tabla participa de una
+// conciliación real. No la lee/escribe ni reconcile-payment.ts ni
+// smart-match.ts, y no existe ningún camino de código que la use para crear
+// un ReconciliationMatch, ni para modificar Obligation/Unit/UnitOwner.
+model ShadowMatchLog {
+  id                   String             @id @default(cuid())
+  paymentTransactionId String
+  paymentTransaction   PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+
+  // Qué versión del motor (src/lib/reconciliation/version.ts::MATCH_ENGINE_VERSION)
+  // produjo este resultado — junto con paymentTransactionId, identifica una
+  // evaluación única a los fines de idempotencia (ver @@unique abajo).
+  engineVersion String
+
+  // Candidato ganador — igual que ReconciliationMatch, todos nullable porque
+  // un resultado BLOCKED/AMBIGUOUS puede no tener ningún candidato ganador.
+  candidateUnitId String?
+  candidateUnit   Unit?   @relation(fields: [candidateUnitId], references: [id], onDelete: SetNull)
+
+  candidateUnitOwnerId String?
+  candidateUnitOwner   UnitOwner? @relation(fields: [candidateUnitOwnerId], references: [id], onDelete: SetNull)
+
+  candidateObligationId String?
+  candidateObligation   Obligation? @relation(fields: [candidateObligationId], references: [id], onDelete: SetNull)
+
+  score  Int // 0-99, mismo rango que ReconciliationMatch.score
+  tier   Int? // tier más fuerte alcanzado entre las señales que matchearon — null si ninguna
+  status ShadowMatchStatus
+
+  // Fase 3.9 — PROPUESTO, migración NO ejecutada todavía (ver
+  // FASE_3_9_..._REPORT.md — pendiente de tu aprobación explícita antes de
+  // correr `prisma migrate dev`). Puramente diagnóstico: el score/tier del
+  // MEJOR candidato encontrado, sin importar si `status` terminó siendo
+  // BLOCKED/AMBIGUOUS — nunca participa de ninguna decisión, nunca habilita
+  // AUTO. `null` = no hubo ningún candidato para evaluar (distinto de `0`,
+  // que significa "hubo candidatos, el mejor puntuó cero"). Ver
+  // src/lib/reconciliation/types.ts::ShadowMatchResult para el detalle
+  // completo del contrato.
+  topCandidateScore Int?
+  topCandidateTier  Int?
+
+  // Fase 5.1 — generaliza topCandidateScore/topCandidateTier (arriba) a
+  // hasta 3 candidatos, para poder mostrar identidad real en un AMBIGUOUS
+  // ("UF 1A — score 72, UF 2B — score 69") sin inventar nada: cada entrada
+  // usa únicamente datos que deterministic-matcher.ts ya calcula
+  // (CandidateEntry.unitCode/score/tier/signals) y match-engine.ts ya tenía
+  // en memoria — solo se agrega la persistencia, cero cambio de cálculo.
+  // NUNCA incluye ownerFullName (dato de persona, no pedido, se agrega
+  // después si hace falta con esa decisión tomada explícitamente). `null` =
+  // no hubo ningún candidato (mismo criterio que topCandidateScore=null).
+  // Estructura: { unitCode: string, score: number, tier: number|null,
+  // matchedSignals: string[] }[], ordenado desc por score.
+  topCandidates Json?
+
+  signals     Json // Signal[] estructurado — señal, tier, matched, strength, evidence
+  blockers    Json // Blocker[] estructurado — nunca vacío en BLOCKED
+  explanation String // texto legible, construido directamente desde signals/blockers — nunca reconstruido acá
+
+  evaluatedAt DateTime // cuándo se calculó el resultado — puede diferir de createdAt/updatedAt de la fila
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt // se actualiza en cada upsert por la misma (paymentTransactionId, engineVersion)
+
+  @@unique([paymentTransactionId, engineVersion])
+  @@index([paymentTransactionId])
+  @@index([status])
+  @@index([engineVersion])
+  @@map("shadow_match_logs")
+}
+
+// Fase 5.9 — persistencia diagnóstica de evidence-score.ts (Fase 5.7,
+// lógica sin cambios). Tabla NUEVA, deliberadamente NO reutiliza
+// ShadowMatchLog: responde una pregunta distinta (convergencia de familias
+// de evidencia — WHATSAPP_MESSAGE/BANK_MOVEMENT/HISTORY — no solo el
+// resultado del motor bancario), ver FASE_5_9_IMPLEMENTACION_FINAL.md para
+// la justificación completa de por qué ShadowMatchLog resultó insuficiente.
+// Mismo criterio de seguridad que ShadowMatchLog: puramente OBSERVACIÓN,
+// nunca escrita por ningún camino que cree ReconciliationMatch ni modifique
+// PaymentTransaction/Obligation/Unit/UnitOwner — reconciliation_matches
+// sigue siendo la única fuente de verdad de una decisión real.
+//
+// Fase 5.9.1 — HISTORIAL INMUTABLE, no "una evaluación vigente" (corrige el
+// hallazgo de FASE_5_9_1_AUDITORIA_SEMANTICA.md: el @@unique original hacía
+// upsert = last-write-wins, perdiendo evaluaciones anteriores). La identidad
+// de cada fila es su propio `id` — `paymentTransactionId`+`engineVersion`
+// dejan de ser una clave de deduplicación y pasan a ser atributos
+// descriptivos para AGRUPAR/FILTRAR el historial, nunca para sobrescribirlo.
+// Cada llamada a guardar() SIEMPRE inserta una fila nueva — nunca UPDATE,
+// nunca DELETE (mismo principio append-only que ya usaba ReconciliationMatch
+// desde Fase 3.x). Reevaluar el mismo pago con la misma versión produce dos
+// eventos históricos distintos, ambos conservados.
+model PaymentEvidenceAssessmentLog {
+  id                   String             @id @default(cuid())
+  paymentTransactionId String
+  paymentTransaction   PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+
+  // Qué versión de evidence-score.ts (src/lib/payment-evidence/version.ts::
+  // EVIDENCE_SCORE_VERSION) produjo este resultado — atributo descriptivo
+  // del evento, NO parte de ninguna clave única (Fase 5.9.1 — ver comentario
+  // del modelo). Permite comparar cómo cambió la evaluación al recalibrar
+  // evidence-score.ts sin perder el historial de ninguna versión.
+  engineVersion String
+
+  state PaymentEvidenceState
+
+  // Denormalizado desde `families` (abajo) — la unidad candidata principal
+  // (BANK_MOVEMENT si está presente, si no WHATSAPP_MESSAGE), únicamente
+  // para poder comparar directo contra ReconciliationMatch.unitId sin tener
+  // que parsear el Json. Nunca se usa para decidir nada — mismo criterio de
+  // "puramente diagnóstico" que candidateUnitId en ShadowMatchLog.
+  candidateUnitId String?
+  candidateUnit   Unit?   @relation(fields: [candidateUnitId], references: [id], onDelete: SetNull)
+
+  // EvidenceFamilyResult[] completo — WHATSAPP_MESSAGE/BANK_MOVEMENT/HISTORY,
+  // siempre las 3, incluidas las MISSING. Ver evidence-score.ts para el
+  // contrato exacto — nunca reconstruido acá, se persiste tal cual se
+  // calculó.
+  families Json
+
+  // EvidenceFamilyName[] — familias con nature=POSITIVE que convergieron en
+  // la misma unidad. Vacío no es un error: la mayoría de los resultados
+  // reales (bank-only, sin WhatsApp todavía) tienen como mucho 1 familia.
+  independentFamiliesConverging Json
+
+  hasContradiction    Boolean
+  contradictionDetail String?
+  explanation         String
+
+  // Fase 5.9.1 — snapshot ESTRUCTURADO (Signal[]/Blocker[]/topCandidates),
+  // capturado en el momento exacto de ESTA evaluación puntual, directamente
+  // desde el ShadowMatchResult ya calculado por runMatchingInShadow (sin
+  // volver a leerlo de ShadowMatchLog, ni antes ni después). Cierra la
+  // dependencia de auditoría hacia ShadowMatchLog identificada en
+  // FASE_5_9_1_AUDITORIA_SEMANTICA.md §4: si ShadowMatchLog se archivara o
+  // cambiara de esquema en el futuro, esta fila sigue siendo auditable por
+  // sí sola. Forma: { bank: {signals, blockers, topCandidates} | null,
+  // whatsapp: {signals, blockers} | null } — ver
+  // evidence-score-store.ts::StructuredEvidenceSnapshot. Deliberadamente NO
+  // incluye candidateUnitOwnerId/candidateObligationId del motor (esos
+  // siguen siendo dominio exclusivo de ShadowMatchLog/ReconciliationMatch —
+  // no son necesarios para explicar el ESTADO de evidence-score, y
+  // duplicarlos sería exactamente el "duplicado indiscriminado" que se pidió
+  // evitar).
+  //
+  // Nullable a propósito: la migración de Fase 5.9.1 encontró 1 fila real
+  // preexistente (de la demo de Fase 5.9, antes de que este campo
+  // existiera) — no hay ningún dato real de ese momento para completar acá,
+  // y forzar un valor por defecto habría significado inventar evidencia que
+  // nunca se capturó. `null` en filas viejas es honesto; todo evento nuevo
+  // (desde esta fase en adelante) siempre lo completa.
+  structuredEvidence Json?
+
+  evaluatedAt DateTime
+  createdAt   DateTime @default(now())
+  // Fase 5.9.1 — `updatedAt` queda como columna vestigial: ninguna fila se
+  // edita nunca después de creada (ver comentario del modelo), así que
+  // siempre coincide con `createdAt`. Se conserva la columna en vez de
+  // eliminarla para que esta migración sea estrictamente aditiva (ningún
+  // DROP de columna con datos reales) — no aporta información nueva, no se
+  // usa para nada.
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentTransactionId, engineVersion])
+  @@index([paymentTransactionId])
+  @@index([state])
+  @@index([candidateUnitId])
+  @@map("payment_evidence_assessment_logs")
+}
+
+// ============================================================================
+// Compliance Foundation — Fase 4 Parte C (ver FASE_4_PLAN_COMPLIANCE_Y_AGENT_OS.md
+// y el informe de esta fase para el detalle completo de las decisiones de
+// diseño). Dominio 100% nuevo y aditivo — ninguna relación hacia
+// PaymentTransaction/ReconciliationMatch/Obligation/UnitOwner, a propósito:
+// el motor de conciliación no debe conocer ni depender de este dominio (ni
+// viceversa). Solo se relaciona con Organization, vía FKs explícitas
+// nullable — nunca un par entityType/entityId polimórfico (no existe ese
+// patrón en ningún otro lado de este schema).
+//
+// Esta fase construye ÚNICAMENTE el dominio de datos: RegulatoryRequirement
+// (catálogo de qué exige la normativa — LEGAL REQUIREMENT), Provider/
+// ProviderOrganization (identidad del proveedor vs. su relación con cada
+// consorcio) y ProviderDocument (el documento real presentado). NO incluye
+// todavía ComplianceAlert, AgentAction ni AgentPolicy — esas dependen de
+// este dominio y se construyen en una fase posterior, sobre esta base.
+// ============================================================================
+
+enum RegulatoryRequirementScope {
+  ADMINISTRATOR
+  PROVIDER
+  ORGANIZATION
+}
+
+enum RegulatoryRequirementType {
+  INSCRIPCION
+  DOCUMENTACION_PROVEEDOR
+  DDJJ_ANUAL
+  CAPACITACION
+  LIQUIDACION_EXPENSAS
+  OTRO
+}
+
+// Catálogo VERSIONADO de obligaciones normativas reales (LEGAL REQUIREMENT,
+// nunca "lo que ConcilIA decide controlar" — eso es una POLICY futura,
+// deliberadamente fuera de este modelo). Nunca se hardcodea el contenido de
+// una ley como lógica de código distribuida — vive acá, con fuente citada y
+// `ultimaVerificacion` explícita, precisamente porque ya se demostró en esta
+// misma fase que un plazo como el de la DDJJ anual de Ley 941 lo fija cada
+// año una Disposición administrativa, no la ley — ningún campo de acá se
+// asume vigente indefinidamente sin volver a chequearlo.
+model RegulatoryRequirement {
+  id String @id @default(cuid())
+
+  titulo       String // qué requisito representa, corto y legible (ej. "Seguro ART de contratistas")
+  jurisdiccion String // dominio geográfico/regulatorio — texto libre a propósito (ej. "CABA"); no se modela como enum cerrado para no tener que migrar el schema si se agrega otra jurisdicción
+  norma        String // ej. "Ley 941"
+  articulo     String? // ej. "Art. 11" — nullable: no toda fuente se cita a nivel de artículo puntual
+  descripcion  String
+  tipo         RegulatoryRequirementType
+  alcance      RegulatoryRequirementScope
+
+  // Texto libre, nunca un FK/enum estricto a ProviderDocumentType — un
+  // requisito con alcance=ADMINISTRATOR/ORGANIZATION (ej. la DDJJ anual) no
+  // corresponde a ningún tipo de documento de proveedor.
+  documentacionEsperada String?
+
+  vigenteDesde DateTime?
+  vigenteHasta DateTime? // null = sigue vigente — "vigente" es SIEMPRE derivado (vigenteHasta==null || vigenteHasta>hoy), nunca un boolean persistido que alguien deba sincronizar a mano
+
+  fuenteNombre String? // ej. "Boletín Oficial CABA", "JURISTECA"
+  fuenteUrl    String
+  fuenteTexto  String? // cita textual opcional
+
+  // OBLIGATORIO, nunca implícito — cuándo se confirmó esto contra la fuente
+  // real la última vez. Distinto de updatedAt (que solo dice "la fila
+  // cambió", no "alguien re-verificó que el dato siga siendo correcto").
+  ultimaVerificacion DateTime
+
+  // Versionado — nunca se sobreescribe una versión existente. Si la
+  // interpretación/vigencia de un requisito cambia, se crea una fila nueva
+  // que reemplaza a la anterior (mismo criterio append-preferido ya usado
+  // en el resto del proyecto para no perder historial).
+  version      Int                    @default(1)
+  supersedesId String?                @unique
+  supersedes   RegulatoryRequirement? @relation("RequirementVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy RegulatoryRequirement? @relation("RequirementVersion")
+
+  // Documentos reales que se presentaron intentando satisfacer este
+  // requisito — relación EXPLÍCITA y OPCIONAL (ver ProviderDocument.requirementId):
+  // no todo documento de proveedor corresponde a un requisito puntual.
+  providerDocuments ProviderDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([alcance])
+  @@index([tipo])
+  @@index([jurisdiccion])
+  @@map("regulatory_requirements")
+}
+
+// Identidad del proveedor — separada a propósito de su relación con cada
+// consorcio (ver ProviderOrganization abajo): la misma empresa de
+// ascensores puede trabajar para 5 consorcios distintos, y es UN solo
+// Provider, no 5 filas duplicadas.
+model Provider {
+  id        String  @id @default(cuid())
+  name      String
+  taxId     String? // CUIT — nullable (puede cargarse el proveedor antes de tener el dato), único cuando está presente
+  matricula String?
+
+  organizations ProviderOrganization[]
+  documents     ProviderDocument[]
+  // Fase 4 Parte D — relación inversa obligatoria de Prisma (sintaxis, cero
+  // columna real nueva acá). Ver AgentObservation más abajo.
+  agentObservations AgentObservation[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — mismo criterio que el resto del schema
+
+  @@unique([taxId])
+  @@map("providers")
+}
+
+// La relación N:M explícita Provider↔Organization — un proveedor puede
+// trabajar para múltiples consorcios sin duplicar su identidad (mismo
+// patrón ya usado por OrganizationAdministrator/ContactOrganization en este
+// schema, nunca un array implícito).
+model ProviderOrganization {
+  id             String   @id @default(cuid())
+  providerId     String
+  organizationId String
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  provider     Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, organizationId])
+  @@index([organizationId])
+  @@map("provider_organizations")
+}
+
+enum ProviderDocumentType {
+  ART
+  RC
+  MATRICULA
+  AFIP
+  ANSES
+  OTRO
+}
+
+// Ciclo de vida ADMINISTRATIVO del documento en sí — NO es "vigente/
+// vencido" (eso se deriva de `validTo` en consulta, ver
+// src/lib/compliance/document-status.ts — nunca un estado persistido que
+// alguien deba mantener sincronizado con el reloj).
+enum ProviderDocumentStatus {
+  PENDING_REVIEW
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
+// El documento REAL presentado por un proveedor — no un requisito
+// abstracto (eso es RegulatoryRequirement). Genérico a propósito: un solo
+// modelo cubre ART, RC, matrículas, habilitaciones, AFIP/ANSES o
+// cualquier otro tipo futuro vía el enum `type` + `validTo` — nunca campos
+// específicos como `artVencimiento`/`seguroVencimiento`.
+model ProviderDocument {
+  id             String  @id @default(cuid())
+  providerId     String
+  // null = documentación reutilizable para TODAS las organizaciones que
+  // contratan a este proveedor (vía ProviderOrganization); con valor =
+  // específica de una sola (ej. una póliza endosada a un consorcio puntual,
+  // Ley 941 Art. 11). No se fuerza a nivel de constraint de base que ese
+  // valor coincida con una ProviderOrganization activa — simplificación
+  // deliberada de esta fase (ver informe, "riesgos"), validable a nivel de
+  // aplicación cuando exista un CRUD real.
+  organizationId String?
+  // null = documento propio del proveedor / política interna del
+  // administrador, no atado a un requisito normativo puntual — nunca se
+  // asume que TODO documento de proveedor es, por sí solo, un requisito
+  // legal.
+  requirementId  String?
+
+  type   ProviderDocumentType
+  status ProviderDocumentStatus @default(PENDING_REVIEW)
+
+  documentNumber String?
+  issuedAt       DateTime? // fecha de emisión
+  validTo        DateTime? // fecha de vencimiento — null = sin vencimiento (ej. una matrícula que no vence)
+
+  evidenceUrl String? // dónde vive el archivo — mecanismo de storage fuera de alcance de esta fase (mismo gap ya documentado, sin resolver, en PaymentNotice.attachmentUrl desde Fase 3.2)
+
+  // Trazabilidad de origen del dato — separada de `status` a propósito:
+  // "la IA lo extrajo de un documento" nunca implica, por sí solo,
+  // "está verificado". Un futuro agente de extracción puede poblar
+  // extractedByAI=true sin que eso cambie `verifiedByHuman`.
+  extractedByAI   Boolean @default(false)
+  verifiedByHuman Boolean @default(false)
+  uploadedBy      String? // quién lo cargó
+
+  // Una renovación crea una fila NUEVA — nunca se edita `validTo` in-place
+  // sobre el documento anterior (mismo criterio append-preferido que el
+  // resto del proyecto). `@unique` porque cada documento anterior tiene, a
+  // lo sumo, UNA renovación directa (cadena, no árbol).
+  previousDocumentId String?           @unique
+  previousDocument   ProviderDocument? @relation("DocumentRenewal", fields: [previousDocumentId], references: [id], onDelete: SetNull)
+  renewal            ProviderDocument? @relation("DocumentRenewal")
+
+  provider     Provider               @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  organization Organization?          @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  requirement  RegulatoryRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  // Fase 4 Parte D — relación inversa obligatoria (sintaxis, cero columna real).
+  agentObservations AgentObservation[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([providerId])
+  @@index([organizationId])
+  @@index([type])
+  @@index([validTo])
+  @@index([requirementId])
+  @@map("provider_documents")
+}
+
+// ============================================================================
+// Agent OS — Fase 4 Parte D (ver FASE_4_PARTE_D_PLAN.md). Abstracción mínima
+// y reusable: de las 7 entidades conceptuales evaluadas (Agent/AgentRun/
+// AgentObservation/AgentProposal/AgentPolicy/AgentAction/AgentAudit), esta
+// fase construye ÚNICAMENTE AgentObservation — el resto se descartó
+// explícitamente por no tener todavía nada real que gobernar (sin acciones,
+// sin ejecución programada, sin múltiples agentes reales compitiendo por
+// identidad). Ver el plan para la justificación completa de cada una.
+//
+// Generaliza (no duplica) el diseño de "ComplianceAlert" esbozado en
+// FASE_4_PLAN_COMPLIANCE_Y_AGENT_OS.md antes de Fase 4 Parte C — es el
+// MISMO concepto, renombrado para servir a cualquier agente futuro
+// (Matching, Expensas, Vencimientos...), no solo Compliance.
+//
+// Fase 4.F — primer agente adicional real: MATCHING (ver
+// src/lib/reconciliation/matching-observer.ts). Sumó `paymentTransactionId`
+// (FK explícita nullable, mismo criterio que providerId/providerDocumentId)
+// para poder referenciar el pago que originó la observación — la única
+// relación nueva de esta tabla hacia el dominio de conciliación. Sigue sin
+// relacionarse con Obligation/UnitOwner/ReconciliationMatch.
+//
+// Es puramente OBSERVACIÓN — ningún campo ni relación de acá ejecuta nada.
+// FKs explícitas nullable, nunca entityType/entityId polimórfico (mismo
+// patrón ya exigido en todo Compliance Foundation).
+// ============================================================================
+
+enum AgentType {
+  COMPLIANCE
+  MATCHING // Fase 4.F — Motor de Matching en modo sombra (ver matching-observer.ts)
+}
+
+enum AgentObservationType {
+  DOCUMENT_EXPIRED
+  DOCUMENT_EXPIRING_SOON
+  PROVIDER_WITHOUT_DOCUMENTS
+  // Deliberadamente NO incluye "documentación faltante según lo que exige
+  // la normativa" — requeriría RegulatoryRequirement sembrado con contenido
+  // legal verificado (0 filas hoy) — ver FASE_4_PARTE_D_PLAN.md §4.
+
+  // Fase 4.F — origen Motor de Matching (ver matching-observer.ts).
+  // Deliberadamente NO incluye un tipo para CANDIDATE: un match limpio no es
+  // un problema que requiera atención — se reporta agregado en el resumen
+  // ejecutivo del panel, nunca como una fila de AgentObservation (evita
+  // confundir 🟢 "resuelto" con "nunca fue un problema").
+  PAYMENT_MATCH_BLOCKED
+  PAYMENT_MATCH_AMBIGUOUS
+}
+
+enum AgentObservationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AgentObservationStatus {
+  OPEN
+  RESOLVED // re-computado en cada corrida del detector, ver compliance-detector.ts
+}
+
+model AgentObservation {
+  id String @id @default(cuid())
+
+  agentType AgentType
+  type      AgentObservationType
+  severity  AgentObservationSeverity
+  status    AgentObservationStatus @default(OPEN)
+
+  providerId         String?
+  providerDocumentId String?
+  organizationId     String?
+  // Fase 4.F — FK explícita nullable hacia el pago que originó la
+  // observación (agentType=MATCHING). Mismo criterio que providerId/
+  // providerDocumentId: nunca entityType/entityId polimórfico. Null para
+  // observaciones de Compliance (agentType=COMPLIANCE), que no se originan
+  // en un pago.
+  paymentTransactionId String?
+
+  provider           Provider?           @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerDocument   ProviderDocument?   @relation(fields: [providerDocumentId], references: [id], onDelete: Cascade)
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  paymentTransaction PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+
+  explanation     String // por qué existe esta observación, legible por un humano
+  evidence        Json // datos estructurados reales que la sustentan — nunca inventados
+  suggestedAction String? // "propuesta de siguiente paso" — texto, NO una acción ejecutable
+  source          String // qué regla determinística la generó (ej. "compliance:document-expiry")
+  confidence      Int? // reservado para observaciones futuras asistidas por IA — null en toda detección determinística
+
+  // Idempotencia — string calculado en código (no una unique compuesta con
+  // columnas nullable: Postgres no deduplica NULLs entre sí, rompería la
+  // idempotencia de observaciones a nivel-proveedor sin documento puntual).
+  dedupeKey String @unique
+
+  detectedAt DateTime // cuándo se detectó por primera vez esta condición
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt // se actualiza en cada re-detección (upsert por dedupeKey)
+
+  @@index([agentType])
+  @@index([type])
+  @@index([status])
+  @@index([providerId])
+  @@index([organizationId])
+  @@index([paymentTransactionId])
+  @@map("agent_observations")
 }

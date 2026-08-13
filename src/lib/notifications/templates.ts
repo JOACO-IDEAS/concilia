@@ -65,10 +65,10 @@ export function plantillaReciboPago(datos: DatosReciboPago): EmailRenderizado {
   const html = layoutBase(
     "Recibo de pago",
     `
-    <p style="margin:0 0 4px;font-size:13px;color:${SLATE_500};">Pago conciliado</p>
+    <p style="margin:0 0 4px;font-size:13px;color:${SLATE_500};">Organización identificada</p>
     <h1 style="margin:0 0 20px;font-size:26px;font-weight:700;color:${SLATE_900};">${monto}</h1>
     <p style="margin:0 0 20px;font-size:14px;line-height:1.5;color:${SLATE_900};">
-      Se registró y concilió un pago para <strong>${datos.organizationName}</strong>. El comprobante ya está disponible en el panel de ConcilIA.
+      Se registró un pago y se identificó automáticamente a <strong>${datos.organizationName}</strong> como la organización dueña. El comprobante ya está disponible en el panel de ConcilIA — la unidad y la obligación correspondientes se identifican en un paso posterior.
     </p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid ${SLATE_200};">
       <tr>
@@ -94,7 +94,7 @@ export function plantillaReciboPago(datos: DatosReciboPago): EmailRenderizado {
   const text = [
     `Pago recibido — ${monto}`,
     "",
-    `Se registró y concilió un pago para ${datos.organizationName}.`,
+    `Se registró un pago y se identificó automáticamente a ${datos.organizationName} como la organización dueña. La unidad y la obligación correspondientes se identifican en un paso posterior.`,
     "",
     `Organización: ${datos.organizationName}`,
     `Fecha: ${fecha}`,

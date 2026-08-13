@@ -19,9 +19,9 @@ export default async function IAPage() {
   const habilidades = [
     {
       icon: Wallet,
-      titulo: "Conciliar pagos automáticamente",
+      titulo: "Identificar la organización de un pago automáticamente",
       detalle: resumen.ok
-        ? `${resumen.autoConciliados} pagos conciliados automáticamente hasta ahora`
+        ? `${resumen.organizacionAutoResuelta} pagos con organización identificada automáticamente hasta ahora`
         : "Matchea CUIT/CBU/Alias contra tus organizaciones",
       href: "/conciliacion",
     },

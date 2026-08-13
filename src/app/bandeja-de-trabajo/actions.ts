@@ -9,26 +9,32 @@ import { prisma } from "@/lib/prisma";
 
 export interface ResumenBandejaTrabajo {
   ok: boolean;
-  autoConciliados: number;
+  organizacionAutoResuelta: number;
   error?: string;
 }
 
 /**
- * Pregunta 1 de la Bandeja de Trabajo — "¿Cuántos pagos se procesaron
- * automáticamente?": cuenta total de `PaymentTransaction` que el motor de
- * reconciliación (webhooks/ingesta) resolvió solo, sin intervención humana
- * (`matchMethod: "AUTO"`). Un número, no un gráfico.
+ * Pregunta 1 de la Bandeja de Trabajo — "¿En cuántos pagos identificamos la
+ * organización automáticamente?": cuenta total de `PaymentTransaction` cuya
+ * ORGANIZACIÓN (Capa 1, `reconcile-payment.ts` — CUIT/CBU exacto) se resolvió
+ * sola, sin intervención humana (`matchMethod: "AUTO"`). Un número, no un
+ * gráfico.
+ *
+ * Fase 5.6 — renombrado a propósito desde `autoConciliados`: esto NUNCA
+ * significa que la Unidad Funcional o la obligación quedaron identificadas,
+ * ni que hubo una conciliación contable — solo que ConcilIA supo a qué
+ * consorcio pertenece el dinero (ver FASE_5_5_AUDITORIA_AUTO.md).
  */
 export async function obtenerResumenBandejaTrabajo(): Promise<ResumenBandejaTrabajo> {
   try {
-    const autoConciliados = await prisma.paymentTransaction.count({
+    const organizacionAutoResuelta = await prisma.paymentTransaction.count({
       where: { status: "MATCHED", matchMethod: "AUTO" },
     });
-    return { ok: true, autoConciliados };
+    return { ok: true, organizacionAutoResuelta };
   } catch (e) {
     return {
       ok: false,
-      autoConciliados: 0,
+      organizacionAutoResuelta: 0,
       error: e instanceof Error ? e.message : "No se pudo consultar el resumen.",
     };
   }

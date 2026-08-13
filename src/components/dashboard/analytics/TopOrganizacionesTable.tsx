@@ -8,7 +8,7 @@ export function TopOrganizacionesTable({ organizaciones }: { organizaciones: Top
     <Card className="animate-fade-in-up">
       <CardHeader
         title="Top organizaciones"
-        subtitle="Mayor volumen cobrado y % conciliado automáticamente"
+        subtitle="Mayor volumen cobrado y % con organización identificada automáticamente"
       />
       {organizaciones.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -16,10 +16,10 @@ export function TopOrganizacionesTable({ organizaciones }: { organizaciones: Top
             <Building2 size={20} />
           </div>
           <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            Sin cobros conciliados todavía
+            Sin cobros con organización identificada todavía
           </p>
           <p className="max-w-[220px] text-xs text-slate-400">
-            El ranking aparece apenas se concilie el primer pago a una organización.
+            El ranking aparece apenas se identifique la organización del primer pago.
           </p>
         </div>
       ) : (
@@ -35,7 +35,7 @@ export function TopOrganizacionesTable({ organizaciones }: { organizaciones: Top
                 </p>
                 <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
                   <Zap size={11} />
-                  {org.porcentajeAutomatico}% automático · {org.cantidadPagos}{" "}
+                  {org.porcentajeOrganizacionAutoResuelta}% automático · {org.cantidadPagos}{" "}
                   {org.cantidadPagos === 1 ? "pago" : "pagos"}
                 </p>
               </div>

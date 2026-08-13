@@ -48,10 +48,10 @@ export default function ConfiguracionPage() {
 
   return (
     <>
-      <Topbar title="Configuración" subtitle="Estado de las integraciones" />
+      <Topbar title="Configuración" subtitle="Conexiones necesarias para operar ConcilIA" />
       <main className="mx-auto w-full max-w-2xl flex-1 p-4 sm:p-6">
         <Card className="animate-fade-in-up">
-          <CardHeader title="Integraciones" subtitle="Sin alguna de estas, esa habilidad queda en modo simulación — no rompe nada" />
+          <CardHeader title="Conexiones" subtitle="Estado técnico de las conexiones de la cuenta" />
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {integraciones.map((i) => (
               <div key={i.nombre} className="flex items-center justify-between gap-3 px-5 py-4">
@@ -65,7 +65,7 @@ export default function ConfiguracionPage() {
                   </Badge>
                 ) : (
                   <Badge tone="amber" icon={<CircleAlert size={12} />}>
-                    Modo simulación
+                    No conectado
                   </Badge>
                 )}
               </div>

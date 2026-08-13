@@ -50,9 +50,12 @@ async function enviarATodos(
 }
 
 /**
- * Email 1 — recibo de pago reconciliado. Va a los ContactChannel de tipo
- * EMAIL con propósito BILLING o GENERAL de la Organization a la que quedó
- * vinculado el pago. Vuelve a leer el PaymentTransaction por id en vez de
+ * Email 1 — recibo de pago con organización identificada (Fase 5.6: nunca
+ * "conciliado" — este email solo confirma que se resolvió la ORGANIZACIÓN
+ * dueña, no la Unidad Funcional ni la obligación, ver
+ * FASE_5_5_AUDITORIA_AUTO.md). Va a los ContactChannel de tipo EMAIL con
+ * propósito BILLING o GENERAL de la Organization a la que quedó vinculado el
+ * pago. Vuelve a leer el PaymentTransaction por id en vez de
  * recibir los datos ya armados: este módulo corre dentro de `after()`, así
  * que un round-trip extra a la base no le cuesta nada a la respuesta del
  * webhook, y mantiene el route handler simple.

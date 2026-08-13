@@ -5,6 +5,7 @@ import { verificarFirmaWebhook } from "@/lib/payments/verify-signature";
 import { extraerPagoDelPayload, PayloadInvalidoError } from "@/lib/payments/extract-payload";
 import { reconcilePayment } from "@/lib/payments/reconcile-payment";
 import { notificarPagoMatched, notificarPagoUnmatched } from "@/lib/notifications/send-payment-notifications";
+import { ejecutarEvaluacionSombraCompleta } from "@/lib/payment-evidence/evidence-score-runner";
 
 const LOG = "[webhook:payments]";
 
@@ -85,6 +86,8 @@ export async function POST(request: NextRequest) {
           currency: pago.currency,
           payerIdentifier: pago.payerIdentifier,
           concept: pago.concept,
+          transactionDate: pago.transactionDate,
+          referenceNumber: pago.referenceNumber,
           rawPayload: payloadJson as Prisma.InputJsonValue,
           status: reconciliacion.status,
           organizationId: reconciliacion.organizationId,
@@ -120,6 +123,17 @@ export async function POST(request: NextRequest) {
         )
       );
     }
+
+    // Fase 3.4/5.9 — motor de matching + evidence-score en MODO SOMBRA,
+    // mismo patrón `after()` que las notificaciones de arriba: corre después
+    // de responder, nunca puede tirar el request
+    // (ejecutarEvaluacionSombraCompleta nunca lanza), y se dispara sin
+    // importar si el pago quedó MATCHED o UNMATCHED a nivel organización.
+    // Fase 5.9 — reemplaza a ejecutarMatchingEnSombra (shadow-runner.ts, sin
+    // tocar): hace lo mismo que esa función (correr el motor + guardar en
+    // ShadowMatchLog) más la persistencia nueva de evidence-score.ts, sin
+    // recalcular el motor dos veces.
+    after(() => ejecutarEvaluacionSombraCompleta(paymentTransactionId));
 
     return NextResponse.json(
       { ok: true, id: resultado.creado.id, status: resultado.reconciliacion.status },

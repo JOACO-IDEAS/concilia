@@ -2,9 +2,15 @@
 
 import { prisma } from "@/lib/prisma";
 
+// Fase 5.6 — nombres corregidos a propósito: lo que estas métricas miden es
+// resolución de ORGANIZACIÓN (Capa 1, reconcile-payment.ts — CUIT/CBU exacto),
+// nunca conciliación contable real (que requeriría unidad + obligación +
+// ReconciliationMatch, ver FASE_5_5_AUDITORIA_AUTO.md). "AUTO"/"MANUAL" acá
+// significan "¿el sistema encontró solo el consorcio dueño, o hubo que
+// vincularlo a mano?" — no dicen nada sobre a qué UF ni a qué obligación.
 export interface KpisDashboard {
-  totalReconciliadoMes: number;
-  tasaReconciliacionAutomatica: number | null; // null = sin pagos conciliados este mes todavía
+  totalOrganizacionIdentificadaMes: number;
+  tasaIdentificacionAutomaticaDeOrganizacion: number | null; // null = sin pagos con organización identificada este mes todavía
   pagosPendientesCount: number;
   pagosPendientesMonto: number;
   organizacionesActivas: number;
@@ -20,7 +26,7 @@ export interface TopOrganizacion {
   name: string;
   totalCobrado: number;
   cantidadPagos: number;
-  porcentajeAutomatico: number; // 0-100
+  porcentajeOrganizacionAutoResuelta: number; // 0-100 — resolución de organización, no de UF/obligación
 }
 
 export interface MetricasDashboardResultado {
@@ -123,18 +129,18 @@ export async function obtenerMetricasDashboard(): Promise<MetricasDashboardResul
         name: nombrePorOrgId.get(orgId) ?? "Organización eliminada",
         totalCobrado: fila._sum.amount?.toNumber() ?? 0,
         cantidadPagos: fila._count._all,
-        porcentajeAutomatico: totalOrg > 0 ? Math.round((autoOrg / totalOrg) * 100) : 0,
+        porcentajeOrganizacionAutoResuelta: totalOrg > 0 ? Math.round((autoOrg / totalOrg) * 100) : 0,
       };
     });
 
     const autoMes = conteoPorMetodoMes.find((g) => g.matchMethod === "AUTO")?._count._all ?? 0;
     const manualMes = conteoPorMetodoMes.find((g) => g.matchMethod === "MANUAL")?._count._all ?? 0;
-    const totalConciliadoMes = autoMes + manualMes;
+    const totalConOrganizacionResueltaMes = autoMes + manualMes;
 
     const kpis: KpisDashboard = {
-      totalReconciliadoMes: sumaReconciliadaMes._sum.amount?.toNumber() ?? 0,
-      tasaReconciliacionAutomatica:
-        totalConciliadoMes > 0 ? Math.round((autoMes / totalConciliadoMes) * 100) : null,
+      totalOrganizacionIdentificadaMes: sumaReconciliadaMes._sum.amount?.toNumber() ?? 0,
+      tasaIdentificacionAutomaticaDeOrganizacion:
+        totalConOrganizacionResueltaMes > 0 ? Math.round((autoMes / totalConOrganizacionResueltaMes) * 100) : null,
       pagosPendientesCount: pendientes._count._all,
       pagosPendientesMonto: pendientes._sum.amount?.toNumber() ?? 0,
       organizacionesActivas,

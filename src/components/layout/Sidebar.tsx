@@ -3,19 +3,10 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, X } from "lucide-react";
-import { useAppStore } from "@/lib/store";
+import { X } from "lucide-react";
 import { useMobileNav } from "@/lib/mobile-nav";
-import { planParaUso } from "@/lib/plans";
-import { formatARS } from "@/lib/format";
 import { Logo } from "./Logo";
 
-// Menú del empleado de IA — 7 categorías planas, sin jerarquías ni
-// destacados (ver PRODUCT_BLUEPRINT.md, "Arquitectura de navegación"). Cada
-// una es lo que le pedirías a una asistente administrativa, no un nombre de
-// feature. Las rutas que no entran acá (Dashboard mock, Analítica,
-// Unidades, Importar, Morosidad detallada) siguen vivas y enlazadas desde
-// adentro de la pantalla que corresponde — no se perdió ninguna capacidad.
 interface NavItem {
   href: string;
   label: string;
@@ -23,12 +14,10 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/bandeja-de-trabajo", label: "Bandeja de Trabajo", emoji: "🏠" },
-  { href: "/ia", label: "IA", emoji: "🤖" },
-  { href: "/conciliacion", label: "Pagos", emoji: "📥" },
-  { href: "/conversaciones", label: "Conversaciones", emoji: "💬" },
-  { href: "/reportes", label: "Documentos", emoji: "📄" },
-  { href: "/consorcios", label: "Consorcios", emoji: "🏢" },
+  { href: "/", label: "Inicio", emoji: "🏠" },
+  { href: "/conciliacion", label: "Conciliación", emoji: "📥" },
+  { href: "/unidades-config", label: "Consorcios", emoji: "🏢" },
+  { href: "/actividad", label: "Actividad", emoji: "🕘" },
   { href: "/configuracion", label: "Configuración", emoji: "⚙️" },
 ];
 
@@ -70,78 +59,8 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   );
 }
 
-function BarraUso({
-  label,
-  usado,
-  limite,
-  colorClassName,
-}: {
-  label: string;
-  usado: number;
-  limite: number;
-  colorClassName: string;
-}) {
-  const esIlimitado = !Number.isFinite(limite);
-  const pct = esIlimitado ? 8 : Math.min(100, Math.round((usado / limite) * 100));
-  return (
-    <div>
-      <div className="mb-0.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-        <span>{label}</span>
-        <span>
-          {usado}/{esIlimitado ? "∞" : limite}
-        </span>
-      </div>
-      <div className="h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-        <div className={`h-full rounded-full ${colorClassName}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function FooterSummary({ consorcios, unidades }: { consorcios: number; unidades: number }) {
-  const plan = planParaUso(consorcios, unidades);
-
-  return (
-    <div className="mx-3 mb-4 space-y-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-        <Building2 size={14} />
-        Estudio Fernández Admin.
-      </div>
-
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
-          Plan {plan.nombre}
-        </span>
-        <span className="text-[10px] text-slate-400">
-          {plan.precioMensual ? `${formatARS(plan.precioMensual)}/mes` : "A medida"}
-        </span>
-      </div>
-
-      <div className="space-y-1.5">
-        <BarraUso
-          label="Edificios"
-          usado={consorcios}
-          limite={plan.maxEdificios}
-          colorClassName="bg-blue-500"
-        />
-        <BarraUso
-          label="Unidades Funcionales"
-          usado={unidades}
-          limite={plan.maxUF}
-          colorClassName="bg-emerald-500"
-        />
-      </div>
-
-      <p className="text-[10px] leading-snug text-slate-400">
-        Tu plan se calcula por edificios y UF administradas — no por comprobantes procesados.
-      </p>
-    </div>
-  );
-}
-
 export function Sidebar() {
   const pathname = usePathname();
-  const { state } = useAppStore();
   const { isOpen, close } = useMobileNav();
 
   useEffect(() => {
@@ -166,7 +85,6 @@ export function Sidebar() {
       <aside className="no-print hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:flex">
         <BrandHeader />
         <NavLinks pathname={pathname} />
-        <FooterSummary consorcios={state.consorcios.length} unidades={state.unidades.length} />
       </aside>
 
       {/* Mobile drawer */}
@@ -188,7 +106,6 @@ export function Sidebar() {
               </button>
             </div>
             <NavLinks pathname={pathname} onNavigate={close} />
-            <FooterSummary consorcios={state.consorcios.length} unidades={state.unidades.length} />
           </div>
         </div>
       ) : null}

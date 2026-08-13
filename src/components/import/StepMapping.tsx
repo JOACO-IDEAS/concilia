@@ -2,24 +2,29 @@
 
 import { useMemo, useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
-import {
-  CAMPOS_DESTINO,
-  type ArchivoParseado,
-  type CampoDestino,
-  type FilaImportacion,
-  type MapeoColumnas,
+import type {
+  ArchivoParseado,
+  CampoDestino,
+  CampoDestinoConfig,
+  FilaImportacion,
+  MapeoColumnas,
+  ProblemaValidacion,
 } from "@/lib/import/types";
-import { validarFila, tieneErroresBloqueantes } from "@/lib/import/validation";
+import { tieneErroresBloqueantes } from "@/lib/import/validation";
 import { ArrowLeft, ArrowRight, CircleAlert } from "lucide-react";
 
 export function StepMapping({
   archivo,
   mapeoInicial,
+  camposDestino,
+  validarFila,
   onVolver,
   onContinuar,
 }: {
   archivo: ArchivoParseado;
   mapeoInicial: MapeoColumnas;
+  camposDestino: CampoDestinoConfig[];
+  validarFila: (valores: Record<CampoDestino, string>) => ProblemaValidacion[];
   onVolver: () => void;
   onContinuar: (mapeo: MapeoColumnas, filas: FilaImportacion[]) => void;
 }) {
@@ -42,13 +47,13 @@ export function StepMapping({
     return valores.join(" · ") || "(vacío)";
   }
 
-  const camposRequeridosSinMapear = CAMPOS_DESTINO.filter((c) => c.requerido && !mapeo[c.campo]);
+  const camposRequeridosSinMapear = camposDestino.filter((c) => c.requerido && !mapeo[c.campo]);
   const puedeContinuar = camposRequeridosSinMapear.length === 0;
 
   function continuar() {
     const filas: FilaImportacion[] = archivo.filas.map((fila, i) => {
       const valores = {} as Record<CampoDestino, string>;
-      for (const campo of CAMPOS_DESTINO) {
+      for (const campo of camposDestino) {
         const header = mapeo[campo.campo];
         const idx = header ? columnaIndex.get(header) : undefined;
         valores[campo.campo] = idx !== undefined ? (fila[idx] ?? "").trim() : "";
@@ -71,7 +76,7 @@ export function StepMapping({
         subtitle={`${archivo.nombreArchivo} · ${archivo.filas.length} filas detectadas`}
       />
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {CAMPOS_DESTINO.map((campo) => (
+        {camposDestino.map((campo) => (
           <div
             key={campo.campo}
             className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center"

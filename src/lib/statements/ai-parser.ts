@@ -281,6 +281,7 @@ export function convertirATransaccionesPipeline(
         amount,
         concept: t.concept,
         payerIdentifier: t.payerIdentifier,
+        referenceNumber: t.referenceNumber,
         esEgreso,
         lineaOriginal,
         externalId,

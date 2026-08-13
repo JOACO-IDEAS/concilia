@@ -1,6 +1,9 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import type { ErrorFilaImportacion, ResultadoImportacion } from "@/lib/import/types";
+import { requireCurrentAdministrator } from "@/lib/auth/session";
+import { requireOrganizationAccess } from "@/lib/auth/organization-access";
 
 // Payload que llega ya validado y editado desde el Paso 3 del wizard — el
 // archivo original nunca se sube al servidor, solo estos valores planos.
@@ -14,18 +17,11 @@ export interface FilaParaImportar {
   cbuAlias: string;
 }
 
-export interface ErrorFilaImportacion {
-  fila: number; // 1-indexado, para mostrarle al usuario
-  organizacion: string;
-  mensaje: string;
-}
-
-export interface ResultadoImportacion {
-  ok: boolean;
-  creadas: number;
-  actualizadas: number;
-  errores: ErrorFilaImportacion[];
-}
+// Re-exportado para no romper imports existentes (`StepConfirm.tsx` /
+// `ImportWizard.tsx` los importaban desde acá antes de generalizar el
+// wizard) — la fuente de verdad ahora vive en src/lib/import/types.ts,
+// compartida con cualquier otro "sabor" de importación (ej. unidades).
+export type { ResultadoImportacion, ErrorFilaImportacion } from "@/lib/import/types";
 
 function separarNombreApellido(nombreCompleto: string): { firstName: string; lastName: string } {
   const partes = nombreCompleto.trim().split(/\s+/).filter(Boolean);
@@ -51,6 +47,7 @@ function pareceCbu(valor: string): boolean {
 export async function importarOrganizaciones(
   filas: FilaParaImportar[]
 ): Promise<ResultadoImportacion> {
+  const administrator = await requireCurrentAdministrator();
   let creadas = 0;
   let actualizadas = 0;
   const errores: ErrorFilaImportacion[] = [];
@@ -64,6 +61,7 @@ export async function importarOrganizaciones(
         where: { taxId: fila.taxId },
         select: { id: true },
       });
+      if (yaExistia) await requireOrganizationAccess(yaExistia.id);
 
       await prisma.$transaction(async (tx) => {
         const organization = await tx.organization.upsert({
@@ -75,6 +73,7 @@ export async function importarOrganizaciones(
             taxId: fila.taxId,
             address: "",
             status: "ACTIVE",
+            administrators: { create: { administratorId: administrator.id } },
           },
         });
 
@@ -202,7 +201,7 @@ export async function importarOrganizaciones(
     } catch (e) {
       errores.push({
         fila: numeroFila,
-        organizacion: fila.name || fila.taxId || `Fila ${numeroFila}`,
+        etiqueta: fila.name || fila.taxId || `Fila ${numeroFila}`,
         mensaje: mensajeDeError(e),
       });
     }
