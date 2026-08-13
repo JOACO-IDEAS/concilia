@@ -21,12 +21,23 @@ afterAll(async () => {
 describe("pilot rate limit against fixtures Postgres", () => {
   it("no permite superar el máximo bajo ocho solicitudes concurrentes", async () => {
     const email = `fixture-${randomBytes(16).toString("hex")}@concilia.test`;
-    const ip = "203.0.113.251";
+    // La IP también debe ser única: su HMAC se cuenta junto al email y una
+    // constante compartida puede incorporar residuos de una corrida previa.
+    const ip = `203.0.113.${1 + (randomBytes(1)[0] % 254)}`;
     keys = [rateLimit.opaquePilotRateLimitKey("email", email, env), rateLimit.opaquePilotRateLimitKey("ip", ip, env)];
-    const results = await Promise.all(Array.from({ length: 8 }, () => rateLimit.enforcePilotRateLimit({ action: "issue", email, ip }, new Date(), env)));
-    const permitted = results.filter((result) => result.allowed).length;
-    expect(permitted).toBeGreaterThan(0);
-    expect(permitted).toBeLessThanOrEqual(3);
-    await expect(fixturePrisma.pilotAccessRateLimitEvent.count({ where: { subjectKey: { in: keys } } })).resolves.toBe(permitted * 2);
+    try {
+      const results = await Promise.all(Array.from({ length: 8 }, () => rateLimit.enforcePilotRateLimit({ action: "issue", email, ip }, new Date(), env)));
+      const permitted = results.filter((result) => result.allowed).length;
+      expect(permitted).toBeGreaterThan(0);
+      expect(permitted).toBeLessThanOrEqual(3);
+      const events = await fixturePrisma.pilotAccessRateLimitEvent.groupBy({ by: ["scope"], where: { subjectKey: { in: keys } }, _count: { _all: true } });
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: "ISSUE_EMAIL", _count: { _all: permitted } }),
+        expect.objectContaining({ scope: "ISSUE_IP", _count: { _all: permitted } }),
+      ]));
+    } finally {
+      await fixturePrisma.pilotAccessRateLimitEvent.deleteMany({ where: { subjectKey: { in: keys } } });
+      keys = [];
+    }
   });
 });
