@@ -4,3 +4,6 @@
 .env
 .env.local
 .env.*.local
+
+# Estado local de agentes: nunca forma parte del artefacto desplegable.
+**/.omc/**

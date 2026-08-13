@@ -47,5 +47,6 @@ next-env.d.ts
 /.agents/
 /.claude/
 /.omc/
+**/.omc/**
 /.windsurf/
 skills-lock.json
