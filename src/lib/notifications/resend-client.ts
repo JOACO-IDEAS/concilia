@@ -16,9 +16,19 @@ let clienteMemo: Resend | null | undefined;
  * llamador decide cómo degradar: loguear y no enviar, sin romper el webhook
  * que dispara la notificación (ver src/lib/notifications/send-payment-notifications.ts).
  */
-export function obtenerClienteResend(): Resend | null {
+export function obtenerClienteResend(env: NodeJS.ProcessEnv = process.env): Resend | null {
+  const create = () => {
+    const apiKey = env.RESEND_API_KEY?.trim();
+    if (!apiKey) return null;
+    try { return new Resend(apiKey); } catch { return null; }
+  };
+  if (env !== process.env) return create();
   if (clienteMemo !== undefined) return clienteMemo;
-  const apiKey = process.env.RESEND_API_KEY;
-  clienteMemo = apiKey ? new Resend(apiKey) : null;
+  clienteMemo = create();
   return clienteMemo;
+}
+
+/** Sólo comprueba presencia local del secreto; nunca contacta al proveedor. */
+export function resendApiKeyIsPresent(env: NodeJS.ProcessEnv = process.env): boolean {
+  return typeof env.RESEND_API_KEY === "string" && env.RESEND_API_KEY.trim().length > 0;
 }

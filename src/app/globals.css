@@ -25,6 +25,24 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Alcance exclusivo al acceso piloto: Chrome no debe reemplazar el contraste
+   explícito del campo cuando ofrece una dirección recordada. */
+.pilot-access-email:-webkit-autofill,
+.pilot-access-email:-webkit-autofill:hover,
+.pilot-access-email:-webkit-autofill:focus {
+  -webkit-text-fill-color: #020617;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pilot-access-email:-webkit-autofill,
+  .pilot-access-email:-webkit-autofill:hover,
+  .pilot-access-email:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f8fafc;
+    box-shadow: 0 0 0 1000px #0f172a inset;
+  }
+}
+
 @keyframes conciliia-fade-in-up {
   from {
     opacity: 0;

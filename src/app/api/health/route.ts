@@ -1,6 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { compararConstante } from "@/lib/security/timing-safe-compare";
+import { pilotEmailConfigurationStatus } from "@/lib/auth/magic-link-email";
+
+const PILOT_EMAIL_READINESS_QUERY = "pilot-email-readiness";
+
+/** El query explícito evita telemetría en health checks regulares. El body
+ * permanece idéntico: sólo Vercel recibe el evento allowlisted. */
+function logPilotEmailReadiness(request: NextRequest) {
+  if (request.nextUrl.searchParams.get("check") !== PILOT_EMAIL_READINESS_QUERY) return;
+  const status = pilotEmailConfigurationStatus();
+  const payload = status.ready
+    ? { event: "PILOT_EMAIL_CONFIG_READY" }
+    : { event: "PILOT_EMAIL_CONFIG_NOT_READY", safeCode: status.safeCode };
+  console.info(JSON.stringify(payload));
+}
 
 /**
  * GET /api/health
@@ -26,6 +40,7 @@ export async function GET(request: NextRequest) {
   const autorizado = !secret || (provisto !== null && compararConstante(secret, provisto));
 
   const inicio = Date.now();
+  logPilotEmailReadiness(request);
 
   try {
     const [organizations, paymentTransactions] = await Promise.all([
