@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { parseSessionToken, SESSION_COOKIE_NAME } from "./src/lib/auth/session-token";
-import { PRIVATE_ROUTE_HEADER } from "./src/lib/auth/private-route";
-
-export { PRIVATE_ROUTE_HEADER } from "./src/lib/auth/private-route";
+import { parseSessionToken, SESSION_COOKIE_NAME } from "./lib/auth/session-token";
+import { PRIVATE_ROUTE_HEADER } from "./lib/auth/private-route";
 
 const PUBLIC_PATHS = new Set(["/acceso", "/api/health", "/api/pilot-access/request", "/api/v1/webhooks/payments"]);
 

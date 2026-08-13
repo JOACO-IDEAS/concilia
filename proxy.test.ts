@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { createSessionToken, SESSION_COOKIE_NAME } from "./src/lib/auth/session";
-import { proxy } from "./proxy";
+import { proxy } from "./src/proxy";
 
 const env = { CONCILIA_SESSION_SECRET: "12345678901234567890123456789012" } as unknown as NodeJS.ProcessEnv;
 const originalSecret = process.env.CONCILIA_SESSION_SECRET;
