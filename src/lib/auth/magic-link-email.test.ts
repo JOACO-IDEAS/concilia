@@ -27,16 +27,16 @@ describe("magic link email", () => {
     expect(() => resolveMagicLinkOrigin({ ...env, CONCILIA_APP_ORIGIN: "https://user:pass@app.concilia.test" })).toThrow();
     expect(() => resolveMagicLinkOrigin({ ...env, CONCILIA_APP_ORIGIN: "http://app.concilia.test" })).toThrow();
     expect(() => buildPilotMagicLinkEmail("token", { ...env, CONCILIA_APP_ORIGIN: "https://app.concilia.test/path" })).toThrow();
-    await expect(sendPilotMagicLink("pilot@concilia.test", "token", { ...env, CONCILIA_APP_ORIGIN: "" })).resolves.toEqual({ accepted: false, category: "invalid_origin" });
+    await expect(sendPilotMagicLink("pilot@concilia.test", "token", { ...env, CONCILIA_APP_ORIGIN: "" })).resolves.toEqual({ accepted: false, safeCode: "INVALID_ORIGIN" });
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it("clasifica rechazo, red y configuración sin registrar la URL ni el token", async () => {
-    mocks.send.mockResolvedValue({ error: { message: "rejected" } });
-    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, category: "rejected" });
+    mocks.send.mockResolvedValue({ error: { statusCode: 422, message: "rejected" } });
+    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, safeCode: "VALIDATION_ERROR" });
     mocks.send.mockRejectedValue(new Error("network"));
-    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, category: "transient" });
+    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, safeCode: "NETWORK_ERROR" });
     mocks.client.mockReturnValue(null);
-    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, category: "configuration" });
+    await expect(sendPilotMagicLink("pilot@concilia.test", "secret-token", env)).resolves.toEqual({ accepted: false, safeCode: "CONFIGURATION_MISSING" });
   });
 });
