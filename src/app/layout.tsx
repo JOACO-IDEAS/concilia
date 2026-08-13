@@ -6,6 +6,10 @@ import { ChunkErrorRecovery } from "@/components/layout/ChunkErrorRecovery";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppStoreProvider } from "@/lib/store";
 import { MobileNavProvider } from "@/lib/mobile-nav";
+import { AuthenticationError, requireCurrentAdministrator } from "@/lib/auth/session";
+import { PRIVATE_ROUTE_HEADER } from "@/lib/auth/private-route";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,11 +28,20 @@ export const metadata: Metadata = {
     "ConciliIA es el panel operativo exclusivo para administradores de consorcios: la IA prepara el match de cada pago, vos aprobás en 1 clic. Menos horas de planilla, más control sobre cada edificio y Unidad Funcional.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const requestHeaders = await headers();
+  if (requestHeaders.get(PRIVATE_ROUTE_HEADER) === "1") {
+    try {
+      await requireCurrentAdministrator();
+    } catch (error) {
+      if (error instanceof AuthenticationError) redirect("/acceso");
+      throw error;
+    }
+  }
   return (
     <html
       lang="es-AR"

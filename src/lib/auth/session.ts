@@ -1,11 +1,10 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-
-export const SESSION_COOKIE_NAME = "concilia_session";
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+export { createSessionToken, parseSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from "./session-token";
+import { createSessionToken, parseSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from "./session-token";
 
 export class AuthenticationError extends Error {
   constructor(message = "Autenticación requerida.") {
@@ -14,54 +13,6 @@ export class AuthenticationError extends Error {
   }
 }
 
-type SessionPayload = { email: string; exp: number };
-
-function base64url(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
-
-function decodeBase64url(value: string): string | null {
-  try {
-    return Buffer.from(value, "base64url").toString("utf8");
-  } catch {
-    return null;
-  }
-}
-
-function sessionSecret(env: NodeJS.ProcessEnv = process.env): string {
-  const secret = env.CONCILIA_SESSION_SECRET;
-  if (!secret || secret.length < 32) throw new AuthenticationError("La sesión no está configurada de forma segura.");
-  return secret;
-}
-
-function sign(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
-}
-
-/** Función pura para tests y para verificar una cookie sin confiar en el cliente. */
-export function createSessionToken(email: string, now = Date.now(), env: NodeJS.ProcessEnv = process.env): string {
-  const payload = base64url(JSON.stringify({ email: email.trim().toLowerCase(), exp: Math.floor(now / 1000) + SESSION_MAX_AGE_SECONDS }));
-  return `${payload}.${sign(payload, sessionSecret(env))}`;
-}
-
-export function parseSessionToken(token: string | undefined, now = Date.now(), env: NodeJS.ProcessEnv = process.env): SessionPayload | null {
-  if (!token) return null;
-  const [encoded, receivedSignature, ...rest] = token.split(".");
-  if (!encoded || !receivedSignature || rest.length > 0) return null;
-  const expectedSignature = sign(encoded, sessionSecret(env));
-  const received = Buffer.from(receivedSignature);
-  const expected = Buffer.from(expectedSignature);
-  if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
-  const raw = decodeBase64url(encoded);
-  if (!raw) return null;
-  try {
-    const payload = JSON.parse(raw) as SessionPayload;
-    if (!payload.email || typeof payload.email !== "string" || !Number.isInteger(payload.exp) || payload.exp <= Math.floor(now / 1000)) return null;
-    return { email: payload.email, exp: payload.exp };
-  } catch {
-    return null;
-  }
-}
 
 /** Primer mecanismo de acceso: credencial bootstrap de entorno, nunca un id enviado por el cliente. */
 export function bootstrapCredentialsAreValid(email: string, password: string, env: NodeJS.ProcessEnv = process.env): boolean {
