@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockReconciliationMatch, mockPaymentTransaction } = vi.hoisted(() => ({
-  mockReconciliationMatch: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
-  mockPaymentTransaction: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  mockReconciliationMatch: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
+  mockPaymentTransaction: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
 }));
 
 const { evaluarDeterministico } = await import("./deterministic-matcher");
@@ -18,7 +18,8 @@ const tx = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockReconciliationMatch.findFirst.mockResolvedValue(null); // sin rechazo previo ni duplicado, por defecto
-  mockPaymentTransaction.findFirst.mockResolvedValue(null); // sin historial, por defecto
+  mockReconciliationMatch.findMany.mockResolvedValue([]); // sin rechazos previos, por defecto
+  mockPaymentTransaction.findMany.mockResolvedValue([]); // sin historial, por defecto
 });
 
 function payment(overrides: Partial<Payment> = {}): Payment {
@@ -36,6 +37,29 @@ function payment(overrides: Partial<Payment> = {}): Payment {
 function obligacionAbierta(overrides: Partial<Record<string, unknown>> = {}) {
   return { id: "ob-1", period: new Date("2026-08-01"), amount: 145000, paidAmount: 0, dueDate: null, externalRef: null, ...overrides };
 }
+
+describe("evaluarDeterministico — consultas acotadas por cardinalidad", () => {
+  it("evalúa 50 unidades con dos lecturas batch y una sola consulta final de duplicado", async () => {
+    const universe: Universe = {
+      organizationId: "org-1",
+      units: Array.from({ length: 50 }, (_, index) => ({
+        id: `unit-${index}`,
+        code: `${index + 1}A`,
+        owners: [{ id: `owner-${index}`, fullName: `Titular ${index}`, taxId: index === 0 ? "20289900113" : `270000000${index}`, phone: null, email: null, isPrimary: true }],
+        openObligations: [obligacionAbierta({ id: `ob-${index}` })],
+      })),
+    };
+
+    const result = await evaluarDeterministico(tx, payment({ concept: "TRANSF UF 1A" }), universe);
+
+    expect(result.status).toBe("CANDIDATE");
+    expect(result.winner?.unitId).toBe("unit-0");
+    expect(mockPaymentTransaction.findMany).toHaveBeenCalledTimes(1);
+    expect(mockReconciliationMatch.findMany).toHaveBeenCalledTimes(1);
+    expect(mockReconciliationMatch.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPaymentTransaction.findFirst).not.toHaveBeenCalled();
+  });
+});
 
 // Caso #9: múltiples titulares de la misma unidad.
 describe("evaluarDeterministico — múltiples titulares (#9)", () => {
@@ -65,10 +89,7 @@ describe("evaluarDeterministico — múltiples titulares (#9)", () => {
 // Caso #14: rechazo previo, scoped por (paymentTransactionId, unitId).
 describe("evaluarDeterministico — rechazo previo (#14)", () => {
   it("bloquea la unidad ya rechazada para ESTE pago puntual, con el motivo real (no 'sin evidencia')", async () => {
-    mockReconciliationMatch.findFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => {
-      if (args.where.decision === "REJECTED") return { id: "rm-1" };
-      return null;
-    });
+    mockReconciliationMatch.findMany.mockResolvedValue([{ unitId: "unit-1" }]);
 
     const universe: Universe = {
       organizationId: "org-1",
@@ -110,9 +131,10 @@ describe("evaluarDeterministico — rechazo previo (#14)", () => {
     const r = await evaluarDeterministico(tx, payment(), universe);
 
     expect(r.status).toBe("CANDIDATE");
-    // Confirma que el rechazo se consulta scoped exactamente por (paymentTransactionId, unitId).
-    expect(mockReconciliationMatch.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ paymentTransactionId: "pt-1", unitId: "unit-1", decision: "REJECTED" }) })
+    // Confirma que los rechazos se consultan en batch, scoped por este pago y
+    // sólo por sus unidades candidatas.
+    expect(mockReconciliationMatch.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ paymentTransactionId: "pt-1", decision: "REJECTED" }) })
     );
   });
 });

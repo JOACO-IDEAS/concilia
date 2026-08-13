@@ -11,7 +11,7 @@ import {
   calcularSenalCuit,
   calcularSenalEmail,
   calcularSenalFecha,
-  calcularSenalHistorialPagos,
+  construirSenalHistorialPagos,
   calcularSenalImporte,
   calcularSenalNombre,
   calcularSenalReferencia,
@@ -71,6 +71,33 @@ export async function evaluarDeterministico(
     return { candidates: [], globalBlockers, status: "BLOCKED", winner: null };
   }
 
+  // Estas dos preguntas antes se resolvían una vez por candidato dentro de
+  // la transacción interactiva. Ambas dependen sólo de la lista completa de
+  // unidades y del pago actual, por lo que una lectura batch es exactamente
+  // equivalente y mantiene el mismo snapshot transaccional.
+  const unitIds = universe.units.map((unit) => unit.id);
+  const [pagosHistoricos, rechazosPrevios] = await Promise.all([
+    tx.paymentTransaction.findMany({
+      where: {
+        unitId: { in: unitIds },
+        status: "MATCHED",
+        amount: payment.amount,
+        id: { not: payment.id },
+      },
+      select: { unitId: true },
+    }),
+    tx.reconciliationMatch.findMany({
+      where: {
+        paymentTransactionId: payment.id,
+        unitId: { in: unitIds },
+        decision: "REJECTED",
+      },
+      select: { unitId: true },
+    }),
+  ]);
+  const unitIdsConHistorial = new Set(pagosHistoricos.flatMap((pago) => (pago.unitId ? [pago.unitId] : [])));
+  const unitIdsRechazadas = new Set(rechazosPrevios.flatMap((rechazo) => (rechazo.unitId ? [rechazo.unitId] : [])));
+
   // Código de unidad extraído del concepto — ¿matchea más de una unidad?
   const senalCodigoPorUnidad = new Map<string, Signal>();
   for (const unit of universe.units) {
@@ -124,17 +151,13 @@ export async function evaluarDeterministico(
         signals.push(calcularSenalEmail(context.email ?? null, owner?.email ?? null));
       }
 
-      signals.push(await calcularSenalHistorialPagos(tx, unit.id, payment.amount, payment.id));
+      signals.push(construirSenalHistorialPagos(unitIdsConHistorial.has(unit.id), payment.amount));
 
       const blockers: Blocker[] = [];
 
       // Rechazo previo, scoped exactamente por (paymentTransactionId, unitId)
       // — nunca por unitId solo (regla ya aprobada, no propaga a otros pagos).
-      const rechazoPrevio = await tx.reconciliationMatch.findFirst({
-        where: { paymentTransactionId: payment.id, unitId: unit.id, decision: "REJECTED" },
-        select: { id: true },
-      });
-      if (rechazoPrevio) {
+      if (unitIdsRechazadas.has(unit.id)) {
         blockers.push({
           type: "PREVIOUSLY_REJECTED",
           evidence: "Esta unidad ya fue rechazada como candidato para este pago puntual.",

@@ -231,7 +231,13 @@ export async function calcularSenalHistorialPagos(
     },
     select: { id: true },
   });
-  const matched = previo !== null;
+  return construirSenalHistorialPagos(previo !== null, monto);
+}
+
+/** Construye la misma señal a partir de una presencia histórica ya consultada.
+ * Permite que el matcher resuelva varias unidades con una lectura batch,
+ * sin modificar la semántica de la señal. */
+export function construirSenalHistorialPagos(matched: boolean, monto: number): Signal {
   return {
     signal: "PAYMENT_HISTORY",
     tier: 3,

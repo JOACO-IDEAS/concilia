@@ -12,8 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockUnit, mockReconciliationMatch, mockPaymentTransaction } = vi.hoisted(() => ({
   mockUnit: { findMany: vi.fn() },
-  mockReconciliationMatch: { findFirst: vi.fn(), create: vi.fn() },
-  mockPaymentTransaction: { findFirst: vi.fn(), findUnique: vi.fn() },
+  mockReconciliationMatch: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+  mockPaymentTransaction: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
 }));
 
 const { generarCandidatos } = await import("./candidate-generator");
@@ -42,10 +42,11 @@ function unitFixture() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockUnit.findMany.mockResolvedValue([unitFixture()]);
-  mockPaymentTransaction.findFirst.mockResolvedValue(null); // sin historial
+  mockPaymentTransaction.findMany.mockResolvedValue([]); // sin historial
   mockPaymentTransaction.findUnique.mockResolvedValue({ id: "pay-1" });
   // Por defecto, sin rechazo previo ni duplicado — cada test lo pisa si lo necesita.
   mockReconciliationMatch.findFirst.mockResolvedValue(null);
+  mockReconciliationMatch.findMany.mockResolvedValue([]);
   mockReconciliationMatch.create.mockImplementation(({ data }: { data: unknown }) =>
     Promise.resolve({ id: "match-nuevo", decision: (data as { decision: string }).decision, createdAt: new Date() })
   );
@@ -90,12 +91,7 @@ describe("Loop de rechazo humano cierra de punta a punta, sin tocar deterministi
     //    rechazo adentro (el mock no comparte estado real con `.create`,
     //    así que se simula explícitamente, tal como hacen los demás tests
     //    de este proyecto con fakes de Prisma).
-    mockReconciliationMatch.findFirst.mockImplementation(({ where }: { where: { decision?: unknown; paymentTransactionId?: string; unitId?: string } }) => {
-      if (where.decision === "REJECTED" && where.paymentTransactionId === "pay-1" && where.unitId === "unit-2b") {
-        return Promise.resolve({ id: "match-nuevo" });
-      }
-      return Promise.resolve(null);
-    });
+    mockReconciliationMatch.findMany.mockResolvedValue([{ unitId: "unit-2b" }]);
 
     // 3) Se re-evalúa el MISMO pago con el motor REAL, sin tocar ni un
     //    archivo del motor — el blocker debe aparecer solo.
@@ -110,13 +106,9 @@ describe("Loop de rechazo humano cierra de punta a punta, sin tocar deterministi
   });
 
   it("el rechazo queda SCOPED por (paymentTransactionId, unitId) — no contamina otro pago para la misma unidad (regla ya existente, reconfirmada)", async () => {
-    mockReconciliationMatch.findFirst.mockImplementation(({ where }: { where: { decision?: unknown; paymentTransactionId?: string; unitId?: string } }) => {
-      // Rechazo real solo para pay-1 — un pago DISTINTO (pay-2) nunca lo ve.
-      if (where.decision === "REJECTED" && where.paymentTransactionId === "pay-1" && where.unitId === "unit-2b") {
-        return Promise.resolve({ id: "match-nuevo" });
-      }
-      return Promise.resolve(null);
-    });
+    mockReconciliationMatch.findMany.mockImplementation(({ where }: { where: { paymentTransactionId?: string } }) =>
+      Promise.resolve(where.paymentTransactionId === "pay-1" ? [{ unitId: "unit-2b" }] : [])
+    );
 
     const otroPago = { ...payment, id: "pay-2" };
     const universe = await generarCandidatos(tx, "org-1");

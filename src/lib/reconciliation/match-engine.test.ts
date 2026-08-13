@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockPaymentTransaction, mockUnit, mockUnitOwner, mockReconciliationMatch, mockTransaction } = vi.hoisted(
   () => {
-    const mockPaymentTransaction = { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const mockPaymentTransaction = { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() };
     const mockUnit = { findMany: vi.fn(), update: vi.fn(), create: vi.fn() };
     const mockUnitOwner = { findMany: vi.fn(), update: vi.fn(), create: vi.fn() };
-    const mockReconciliationMatch = { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const mockReconciliationMatch = { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() };
     type Tx = {
       paymentTransaction: typeof mockPaymentTransaction;
       unit: typeof mockUnit;
@@ -38,7 +38,9 @@ const { runMatchingInShadow } = await import("./match-engine");
 beforeEach(() => {
   vi.clearAllMocks();
   mockReconciliationMatch.findFirst.mockResolvedValue(null);
+  mockReconciliationMatch.findMany.mockResolvedValue([]);
   mockPaymentTransaction.findFirst.mockResolvedValue(null);
+  mockPaymentTransaction.findMany.mockResolvedValue([]);
 });
 
 function decimal(n: number) {

@@ -98,8 +98,8 @@ const { mockTx, obsStore, noticeStore } = vi.hoisted(() => {
 
   const fakeUnitOwner = { findMany: vi.fn(async () => unitOwners) };
   const fakeUnit = { findMany: vi.fn(async () => units) };
-  const fakeReconciliationMatch = { findFirst: vi.fn(async () => null) };
-  const fakePaymentTransaction = { findFirst: vi.fn(async () => null) };
+  const fakeReconciliationMatch = { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) };
+  const fakePaymentTransaction = { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) };
 
   const fakePaymentNotice = {
     findMany: vi.fn(async ({ where }: { where: { phone: string } }) => [...noticeStore.values()].filter((n) => n.phone === where.phone)),
