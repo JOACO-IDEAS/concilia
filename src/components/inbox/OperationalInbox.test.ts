@@ -1,10 +1,47 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("OperationalInbox — enlaces de Human Review", () => {
-  it("no enlaza a la ruta histórica rota; usa el destino canónico funcional", () => {
+const inboxSourceFiles = [
+  "./OperationalInbox.tsx",
+  "./operational-inbox-view-model.ts",
+  "./AttentionQueue.tsx",
+  "./InformationQueue.tsx",
+  "./RecentActivity.tsx",
+  "./RecommendedNextStep.tsx",
+  "./OperationalQuickActions.tsx",
+  "./DelinquencyCallout.tsx",
+  "./OperationalHeader.tsx",
+  "./OperationalSummary.tsx",
+].map((relative) => readFileSync(new URL(relative, import.meta.url), "utf8"));
+
+describe("OperationalInbox — enlaces de Human Review y arquitectura del módulo", () => {
+  it("ningún archivo del módulo de Inicio enlaza a la ruta histórica rota", () => {
+    for (const source of inboxSourceFiles) expect(source).not.toContain("/conciliacion/revision-humana");
+  });
+
+  it("el destino canónico funcional (/conciliacion) sigue alcanzable desde el módulo", () => {
+    expect(inboxSourceFiles.some((source) => source.includes('"/conciliacion"'))).toBe(true);
+  });
+
+  it("OperationalInbox mantiene exactamente la misma firma de props que antes de UX.3 — cero cambios requeridos en page.tsx", () => {
     const source = readFileSync(new URL("./OperationalInbox.tsx", import.meta.url), "utf8");
-    expect(source).not.toContain("/conciliacion/revision-humana");
-    expect(source).toContain('href="/conciliacion"');
+    expect(source).toContain("data: OperationalInboxData");
+    expect(source).toContain("reviewItems: OperationalReviewItem[]");
+    expect(source).toContain("reviewQueueAvailable: boolean");
+    expect(source).toContain("firstReviewableStatus: FirstReviewableCaseStatus");
+  });
+
+  it("no importa tipos de Prisma directamente — solo tipos ya presentacionales de operational-inbox-data / el view model", () => {
+    for (const source of inboxSourceFiles) {
+      // El comment del contrato menciona "@/generated/prisma" como
+      // documentación de la regla — se excluye antes de verificar imports reales.
+      const withoutComments = source.replace(/\/\*\*[\s\S]*?\*\//g, "");
+      expect(withoutComments).not.toMatch(/@\/generated\/prisma/);
+      expect(withoutComments).not.toMatch(/from ["']@\/lib\/prisma["']/);
+    }
+  });
+
+  it("no hay ningún control de AUTO en el módulo de Inicio", () => {
+    for (const source of inboxSourceFiles) expect(source).not.toMatch(/\bAUTO\b/);
   });
 });

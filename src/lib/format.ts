@@ -37,6 +37,17 @@ export function formatDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** Fecha larga en prosa para encabezados contextuales (ej. "viernes 14 de
+ * agosto de 2026") — nunca usada para datos operativos, solo para orientar. */
+export function formatFullDate(date: Date): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
 export function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffHours = Math.round(diffMs / (1000 * 60 * 60));
