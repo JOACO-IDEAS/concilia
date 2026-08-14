@@ -1,10 +1,15 @@
 "use client";
 
 import { FormEvent, useRef, useState } from "react";
+import { CircleAlert } from "lucide-react";
 
 const GENERIC_MESSAGE = "Si la dirección está habilitada, recibirás un enlace de acceso en los próximos minutos.";
 const RATE_LIMIT_MESSAGE = "Se realizaron demasiados intentos. Esperá unos minutos antes de volver a probar.";
 const UNAVAILABLE_MESSAGE = "El acceso no está disponible temporalmente. Intentá nuevamente más tarde.";
+
+// UX-1 — genérico a propósito: nunca distingue token inexistente, vencido,
+// usado o revocado (anti-enumeración, ver PILOT_AUTHENTICATED_ACCESS_STATIC_AUDIT_V1.md).
+export const INVALID_LINK_MESSAGE = "Ese enlace ya no es válido. Pedí uno nuevo con el formulario de abajo.";
 
 export function accessRequestMessage(status: number): string {
   if (status === 429) return RATE_LIMIT_MESSAGE;
@@ -12,7 +17,7 @@ export function accessRequestMessage(status: number): string {
   return GENERIC_MESSAGE;
 }
 
-export function PilotAccessRequestForm() {
+export function PilotAccessRequestForm({ invalidLink = false }: { invalidLink?: boolean }) {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -48,6 +53,12 @@ export function PilotAccessRequestForm() {
         <h1 className="text-xl font-bold text-slate-950 dark:text-slate-50">Acceso a ConcilIA</h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Ingresá tu email para recibir un enlace de acceso.</p>
       </div>
+      {invalidLink ? (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <CircleAlert size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>{INVALID_LINK_MESSAGE}</span>
+        </div>
+      ) : null}
       <div>
         <label htmlFor="pilot-access-email" className="block text-sm font-medium text-slate-900 dark:text-slate-100">Email</label>
         <input
@@ -68,6 +79,9 @@ export function PilotAccessRequestForm() {
       </button>
       <p ref={messageRef} tabIndex={-1} aria-live="polite" className={message ? "text-sm text-slate-700 outline-none dark:text-slate-200" : "sr-only"}>
         {message ?? ""}
+      </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        El enlace, si llega, vence a los 15 minutos — revisá también la carpeta de spam.
       </p>
     </form>
   );
