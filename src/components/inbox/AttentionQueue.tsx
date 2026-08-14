@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { OperationalEmptyState } from "./OperationalEmptyState";
+import { CaseMetadata } from "./CaseMetadata";
 import type { AttentionCase } from "./operational-inbox-view-model";
 
 function ActionLink({ href, children }: { href: string; children: React.ReactNode }) {
@@ -26,7 +27,7 @@ export function AttentionQueue({ available, cases }: { available: boolean; cases
             <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div className="min-w-0">
                 <p className="text-sm font-semibold">{item.title}</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.organizationName} · {item.amountLabel} · {item.reason}</p>
+                <CaseMetadata items={[{ text: item.organizationName }, { text: item.amountLabel, atomic: true }, { text: item.reason }]} />
               </div>
               <ActionLink href={item.href}>{item.actionLabel}</ActionLink>
             </div>

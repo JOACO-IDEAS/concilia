@@ -233,12 +233,27 @@ function firstActionable(milestones: FirstValueMilestone[]): FirstValueMilestone
   return milestones.find((milestone) => milestone.href && (milestone.state === "CURRENT" || milestone.state === "BLOCKED"));
 }
 
+/** Construye la copia de un paso agregado. Cuando hay un hito accionable
+ * real dentro del grupo, el título/detalle/acción del paso se toman
+ * literalmente de ESE MISMO hito — nunca de una etiqueta inventada aparte —
+ * para que el CTA nunca pueda describir un destino distinto del que el
+ * texto del paso anuncia (ver UX.3.2 §2). Sólo se usa una copia fija propia
+ * cuando el grupo ya está COMPLETE (no hay acción posible) o todavía no es
+ * alcanzable (PENDING sin ningún hito accionable). */
+function stepCopyFor(group: FirstValueMilestone[], completeCopy: { title: string; detail: string }, pendingCopy: { title: string; detail: string }): Omit<SetupStep, "key"> {
+  const state = mostUrgent(group.map((m) => m.state));
+  if (state === "COMPLETE") return { ...completeCopy, state };
+  const actionable = firstActionable(group);
+  if (actionable) return { title: actionable.title, detail: actionable.detail, state, href: actionable.href, actionLabel: actionable.action };
+  return { ...pendingCopy, state };
+}
+
 /** Agrega los 6 hitos reales de `getFirstValueProgress` a 3 pasos máximo,
- * sin inventar ningún dato: cada paso toma el estado más urgente y el
- * href/acción real del primer hito accionable dentro de su grupo. Un
- * consorcio creado pero sin unidades/obligaciones cargadas NO cuenta como
- * "configurado" — el paso 1 sólo llega a COMPLETE cuando los 3 hitos que
- * agrupa lo están. */
+ * sin inventar ningún dato: cada paso toma el estado más urgente del grupo,
+ * y su título/detalle/CTA vienen del mismo hito accionable real (nunca
+ * texto inventado aparte — ver `stepCopyFor`). Un consorcio creado pero sin
+ * unidades/obligaciones cargadas NO cuenta como "configurado" — el paso 1
+ * sólo llega a COMPLETE cuando los 3 hitos que agrupa lo están. */
 function buildSetupJourney(data: OperationalInboxData, firstReviewableStatus: FirstReviewableCaseStatus, firstReviewableCaseHref: string | undefined): SetupJourneyViewModel | null {
   if (data.onboarding.firstDecisionCount > 0) return null;
   const progress = getFirstValueProgress(data, firstReviewableStatus, firstReviewableCaseHref);
@@ -249,9 +264,9 @@ function buildSetupJourney(data: OperationalInboxData, firstReviewableStatus: Fi
   const reviewGroup = byKey(["ASSESSMENT", "REVIEWABLE_CASE"]);
 
   const steps: SetupStep[] = [
-    { key: "CONFIGURE", title: "Configurá tu consorcio", detail: "Consorcio, unidades y obligaciones — la base para identificar pagos.", state: mostUrgent(configureGroup.map((m) => m.state)), href: firstActionable(configureGroup)?.href, actionLabel: firstActionable(configureGroup)?.action },
-    { key: "IMPORT", title: "Importá movimientos", detail: "Subí un extracto real para que ConcilIA empiece a analizar pagos.", state: mostUrgent(importGroup.map((m) => m.state)), href: firstActionable(importGroup)?.href, actionLabel: firstActionable(importGroup)?.action },
-    { key: "REVIEW", title: "Revisá tu primer caso", detail: "ConcilIA te va a mostrar la evidencia para que decidas.", state: mostUrgent(reviewGroup.map((m) => m.state)), href: firstActionable(reviewGroup)?.href, actionLabel: firstActionable(reviewGroup)?.action },
+    { key: "CONFIGURE", ...stepCopyFor(configureGroup, { title: "Consorcio configurado", detail: "Consorcio, unidades y obligaciones ya están listos." }, { title: "Configurá tu consorcio", detail: "Consorcio, unidades y obligaciones — la base para identificar pagos." }) },
+    { key: "IMPORT", ...stepCopyFor(importGroup, { title: "Movimientos importados", detail: "Ya hay movimientos reales disponibles para analizar." }, { title: "Importá movimientos", detail: "Se habilita después de configurar tu consorcio." }) },
+    { key: "REVIEW", ...stepCopyFor(reviewGroup, { title: "Primer caso revisado", detail: "Ya tomaste tu primera decisión." }, { title: "Revisá tu primer caso", detail: "Se habilita después de importar movimientos reales." }) },
   ];
 
   const activeStep = steps.find((step) => step.href && (step.state === "CURRENT" || step.state === "BLOCKED"));

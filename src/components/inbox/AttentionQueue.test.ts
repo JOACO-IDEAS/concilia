@@ -19,4 +19,16 @@ describe("AttentionQueue — prioridad principal de Inicio", () => {
     expect(source).toContain("item.amountLabel");
     expect(source).toContain("item.reason");
   });
+
+  it("usa CaseMetadata para que cada dato pueda envolver como unidad, sin formar un único párrafo corrido (UX.3.2 §3)", () => {
+    expect(source).toContain("CaseMetadata");
+    expect(source).toContain("item.organizationName");
+    expect(source).toContain("item.reason");
+  });
+
+  it("solo el importe (formato fijo corto) se marca atomic — el nombre del consorcio y la razón pueden ser largos y deben poder envolver", () => {
+    expect(source).toMatch(/\{ text: item\.amountLabel, atomic: true \}/);
+    expect(source).not.toMatch(/\{ text: item\.organizationName, atomic: true \}/);
+    expect(source).not.toMatch(/\{ text: item\.reason, atomic: true \}/);
+  });
 });

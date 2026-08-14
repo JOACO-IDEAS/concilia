@@ -13,6 +13,7 @@ const inboxSourceFiles = [
   "./OperationalHeader.tsx",
   "./OperationalSummary.tsx",
   "./SetupJourney.tsx",
+  "./CaseMetadata.tsx",
 ].map((relative) => readFileSync(new URL(relative, import.meta.url), "utf8"));
 
 describe("OperationalInbox — enlaces de Human Review y arquitectura del módulo", () => {

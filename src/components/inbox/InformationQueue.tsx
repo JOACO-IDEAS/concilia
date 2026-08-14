@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { OperationalEmptyState } from "./OperationalEmptyState";
+import { CaseMetadata } from "./CaseMetadata";
 import type { InformationCase } from "./operational-inbox-view-model";
 
 function ActionLink({ href, children }: { href: string; children: React.ReactNode }) {
@@ -23,7 +24,7 @@ export function InformationQueue({ cases }: { cases: InformationCase[] }) {
             <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div className="min-w-0">
                 <p className="text-sm font-semibold">Pago sin resolver</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{payment.organizationName} · {payment.amountLabel} · {payment.referenceLabel} · {payment.ageLabel}</p>
+                <CaseMetadata items={[{ text: payment.organizationName }, { text: payment.amountLabel, atomic: true }, { text: payment.referenceLabel }, { text: payment.ageLabel, atomic: true }]} />
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{payment.reason}</p>
               </div>
               <ActionLink href={payment.href}>Investigar</ActionLink>

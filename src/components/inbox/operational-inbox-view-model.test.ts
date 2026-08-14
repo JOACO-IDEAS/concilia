@@ -70,6 +70,30 @@ describe("buildOperationalInboxViewModel — organización nueva sin datos", () 
     const vm = buildVm(emptyOrgData);
     expect(vm.setupJourney?.primaryCta).toMatchObject({ href: "/importar" });
   });
+
+  it("UX.3.2 §2 — el título del paso activo y el botón de CTA describen el mismo destino, nunca dos procesos distintos", () => {
+    const vm = buildVm(emptyOrgData);
+    const activeStep = vm.setupJourney?.steps.find((s) => s.state === "CURRENT" || s.state === "BLOCKED");
+    expect(activeStep).toBeDefined();
+    // El título visible del paso y el título/href de la CTA primaria vienen
+    // del mismo hito real — no pueden divergir por construcción.
+    expect(vm.setupJourney?.primaryCta?.title).toBe(activeStep?.title);
+    expect(vm.setupJourney?.primaryCta?.href).toBe(activeStep?.href);
+    expect(vm.setupJourney?.primaryCta?.actionLabel).toBe(activeStep?.actionLabel);
+    // Caso concreto: la organización todavía no existe → el paso y el botón
+    // hablan los dos de "crear o importar un consorcio" vía /importar.
+    expect(activeStep?.title).toMatch(/consorcio/i);
+    expect(vm.setupJourney?.primaryCta?.actionLabel).toBe("Importar consorcio");
+  });
+
+  it("cuando el consorcio ya existe pero faltan unidades, el paso y el CTA hablan de unidades — no del consorcio ni de movimientos", () => {
+    const orgOnlyData: OperationalInboxData = { ...emptyOrgData, organizationCount: 1 };
+    const vm = buildVm(orgOnlyData);
+    const configureStep = vm.setupJourney?.steps.find((s) => s.key === "CONFIGURE");
+    expect(configureStep?.href).toBe("/unidades-config");
+    expect(configureStep?.actionLabel).toBe("Gestionar unidades");
+    expect(vm.setupJourney?.primaryCta).toMatchObject({ href: "/unidades-config", actionLabel: "Gestionar unidades", title: configureStep?.title });
+  });
 });
 
 describe("buildOperationalInboxViewModel — todo al día", () => {
