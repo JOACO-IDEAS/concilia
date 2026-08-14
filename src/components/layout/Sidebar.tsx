@@ -13,11 +13,15 @@ interface NavItem {
   emoji: string;
 }
 
+// UX-2 — navegación canónica del piloto (decisión de Product Owner,
+// ADMIN_PANEL_INFORMATION_ARCHITECTURE_V1.md): exactamente estos 4 destinos.
+// "Consorcios" apunta a /consorcios, el hub canónico — unidades y
+// obligaciones viven dentro de la ficha de cada consorcio, no como ítems
+// propios acá. Ningún módulo experimental o huérfano se agrega al sidebar.
 const navItems: NavItem[] = [
   { href: "/", label: "Inicio", emoji: "🏠" },
   { href: "/conciliacion", label: "Conciliación", emoji: "📥" },
-  { href: "/unidades-config", label: "Consorcios", emoji: "🏢" },
-  { href: "/actividad", label: "Actividad", emoji: "🕘" },
+  { href: "/consorcios", label: "Consorcios", emoji: "🏢" },
   { href: "/configuracion", label: "Configuración", emoji: "⚙️" },
 ];
 

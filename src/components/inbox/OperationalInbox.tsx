@@ -44,7 +44,7 @@ export function OperationalInbox({ data, reviewItems, reviewQueueAvailable, firs
 
       <Section title="Requiere decisión" subtitle="ConcilIA ya encontró evidencia suficiente para que revises el caso.">
         {!reviewQueueAvailable ? (
-          <div className="px-5 py-5 text-sm text-slate-600 dark:text-slate-300">La cola de revisión detallada no está disponible en este entorno todavía. <ActionLink href="/conciliacion/revision-humana">Abrir revisión humana</ActionLink></div>
+          <div className="px-5 py-5 text-sm text-slate-600 dark:text-slate-300">La cola de revisión detallada no está disponible en este entorno todavía. <ActionLink href="/conciliacion">Ir a Conciliación</ActionLink></div>
         ) : reviewItems.length === 0 ? (
           <div className="flex items-center gap-3 px-5 py-5 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 size={18} className="text-emerald-600" />No hay decisiones pendientes.</div>
         ) : (

@@ -31,4 +31,15 @@ describe("proxy de rutas privadas", () => {
     const response = proxy(new NextRequest("https://concilia.test/conciliacion", { headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` } }));
     expect(response.status).toBe(200);
   });
+
+  it("/ sigue protegida como cualquier ruta privada: sin sesión redirige a /acceso, con sesión no hay loop", () => {
+    const anonymous = proxy(new NextRequest("https://concilia.test/"));
+    expect(anonymous.status).toBe(307);
+    expect(anonymous.headers.get("location")).toBe("https://concilia.test/acceso");
+
+    const token = createSessionToken("admin@concilia.test", Date.now(), env);
+    const authenticated = proxy(new NextRequest("https://concilia.test/", { headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` } }));
+    expect(authenticated.status).toBe(200);
+    expect(authenticated.headers.get("location")).toBeNull();
+  });
 });

@@ -9,8 +9,11 @@ import { redirect } from "next/navigation";
 // reales, sin ganador claro) con selector multi-candidato — camino
 // estructuralmente separado de los casos de candidato único de arriba,
 // nunca mezclados (ver review-queue.ts).
+// UX-2 — ruta canónica única de Human Review: Conciliación (lista real de
+// casos que requieren atención) → Resolution Workspace por caso puntual
+// (/conciliacion/resolver/[id]). Esta URL histórica se conserva solo para no
+// romper enlaces/bookmarks existentes, redirigiendo a la lista real en vez
+// de a Inicio — no se modifica ninguna lógica de revisión.
 export default function RevisionHumanaPage() {
-  // La resolución se consolidó en Inicio → Workspace. Se conserva la URL
-  // para enlaces existentes, pero no se mantiene una segunda UX paralela.
-  redirect("/");
+  redirect("/conciliacion");
 }
