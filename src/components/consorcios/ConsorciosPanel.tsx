@@ -50,7 +50,33 @@ export function ConsorciosPanel() {
     };
   }, [unidadesDelConsorcio]);
 
-  if (!consorcio) return null;
+  if (!consorcio) {
+    return (
+      <Card className="animate-fade-in-up mx-auto max-w-2xl">
+        <div className="flex flex-col items-start gap-4 px-6 py-8 sm:px-8">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <Building2 size={20} aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Todavía no hay datos operativos para mostrar
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Cuando cargues las unidades y obligaciones de tu consorcio, vas a poder consultar su
+              estado desde acá.
+            </p>
+          </div>
+          <Link
+            href="/unidades-config"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            Gestionar unidades
+            <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        </div>
+      </Card>
+    );
+  }
 
   const cfg = estadoConfig[consorcio.estado];
   const CfgIcon = cfg.icon;

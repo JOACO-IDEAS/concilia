@@ -1,22 +1,15 @@
-"use client";
-
-import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { StatementIngestionPanel } from "./StatementIngestionPanel";
 import { AtencionRequeridaCard } from "./AtencionRequeridaCard";
-import { ReconciliationView } from "@/components/reconciliation/ReconciliationView";
 import type { ListaPagosResultado } from "@/app/conciliacion/payments-actions";
 import type { BandejaInconsistenciasResultado } from "@/app/conciliacion/payments-actions";
 import { formatDateTime, formatMonto } from "@/lib/format";
-import { CircleCheck, Wrench, ChevronDown, ChevronUp } from "lucide-react";
+import { CircleCheck } from "lucide-react";
 
 /**
  * Flujo único de "Pagos" — ya no hay tabs entre Webhooks/Extractos/Manual:
  * son pasos de una misma tarea (cargar → aprobar lo que falta → ver lo ya
- * resuelto), no alternativas que el usuario tenga que elegir. "Conciliación
- * manual" (mock, `ReconciliationView`) sigue existiendo para casos
- * especiales/debugging, pero oculta detrás de un toggle discreto — el
- * flujo principal es Smart Match + aprobación.
+ * resuelto), no alternativas que el usuario tenga que elegir.
  */
 export function ConciliacionTabs({
   datosWebhooks,
@@ -25,8 +18,6 @@ export function ConciliacionTabs({
   datosWebhooks: ListaPagosResultado;
   bandeja: BandejaInconsistenciasResultado;
 }) {
-  const [modoManual, setModoManual] = useState(false);
-
   const historial = datosWebhooks.ok
     ? datosWebhooks.pagos.filter((p) => p.status === "MATCHED").slice(0, 5)
     : [];
@@ -65,19 +56,6 @@ export function ConciliacionTabs({
           </div>
         </Card>
       ) : null}
-
-      <div className="pt-2 text-center">
-        <button
-          onClick={() => setModoManual((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
-        >
-          <Wrench size={12} />
-          Conciliación manual (modo avanzado)
-          {modoManual ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        </button>
-      </div>
-
-      {modoManual ? <ReconciliationView /> : null}
     </div>
   );
 }

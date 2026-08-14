@@ -9,7 +9,7 @@ export default function ConsorciosPage() {
     <>
       <Topbar
         title="Consorcios"
-        subtitle="Detalle financiero individual por edificio"
+        subtitle="Información operativa de tus consorcios"
       />
       <main className="flex-1 p-4 sm:p-6">
         <div className="mb-4 flex flex-wrap justify-end gap-4">

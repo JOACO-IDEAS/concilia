@@ -1,13 +1,6 @@
 "use client";
 
 import { createContext, useContext, useMemo, useReducer, type ReactNode } from "react";
-import {
-  consorcios as consorciosIniciales,
-  unidades as unidadesIniciales,
-  transacciones as transaccionesIniciales,
-  reglasIniciales,
-  actividadReciente as actividadInicial,
-} from "./mock-data";
 import type {
   ActividadReciente,
   Consorcio,
@@ -325,16 +318,23 @@ interface AppStoreValue {
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
 
-const initialState: AppState = {
-  consorcios: consorciosIniciales,
-  unidades: unidadesIniciales,
-  transacciones: transaccionesIniciales,
-  reglas: reglasIniciales,
-  actividad: actividadInicial,
-};
+/**
+ * El store de interfaz nunca puede inicializarse con fixtures como si fueran
+ * datos de la organización autenticada. Hasta que cada superficie consuma su
+ * contrato tenant-scoped real, parte de un estado operativo honestamente vacío.
+ */
+export function createEmptyAppState(): AppState {
+  return {
+    consorcios: [],
+    unidades: [],
+    transacciones: [],
+    reglas: [],
+    actividad: [],
+  };
+}
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, undefined, createEmptyAppState);
 
   const value = useMemo<AppStoreValue>(
     () => ({
