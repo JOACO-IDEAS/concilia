@@ -5,16 +5,18 @@ import type { NextStep } from "./operational-inbox-view-model";
 
 /** Una única recomendación priorizada — nunca una lista. Si no hay ningún
  * paso urgente (todo al día y sin cola disponible que sugerir), no se
- * renderiza nada: un "siguiente paso" inventado sería peor que ausencia. */
+ * renderiza nada: un "siguiente paso" inventado sería peor que ausencia.
+ * Card neutral (no un panel azul anidado): el único acento de color es el
+ * botón de acción — una sola CTA primaria clara, no una superficie tintada. */
 export function RecommendedNextStep({ nextStep }: { nextStep: NextStep | null }) {
   if (!nextStep) return null;
   return (
-    <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+    <Card>
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
         <div className="flex min-w-0 items-start gap-3">
-          <Sparkles size={18} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          <Sparkles size={18} className="mt-0.5 shrink-0 text-slate-400 dark:text-slate-500" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">Siguiente paso recomendado</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Siguiente paso recomendado</p>
             <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-slate-50">{nextStep.title}</p>
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{nextStep.detail}</p>
           </div>
