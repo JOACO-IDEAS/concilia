@@ -26,7 +26,10 @@ describe("pilot rate limit against fixtures Postgres", () => {
     const ip = `203.0.113.${1 + (randomBytes(1)[0] % 254)}`;
     keys = [rateLimit.opaquePilotRateLimitKey("email", email, env), rateLimit.opaquePilotRateLimitKey("ip", ip, env)];
     try {
-      const results = await Promise.all(Array.from({ length: 8 }, () => rateLimit.enforcePilotRateLimit({ action: "issue", email, ip }, new Date(), env)));
+      const attempts = await Promise.allSettled(Array.from({ length: 8 }, () => rateLimit.enforcePilotRateLimit({ action: "issue", email, ip }, new Date(), env)));
+      const failed = attempts.filter((attempt) => attempt.status === "rejected");
+      const results = attempts.flatMap((attempt) => attempt.status === "fulfilled" ? [attempt.value] : []);
+      expect(failed).toHaveLength(0);
       const permitted = results.filter((result) => result.allowed).length;
       expect(permitted).toBeGreaterThan(0);
       expect(permitted).toBeLessThanOrEqual(3);
@@ -37,6 +40,7 @@ describe("pilot rate limit against fixtures Postgres", () => {
       ]));
     } finally {
       await fixturePrisma.pilotAccessRateLimitEvent.deleteMany({ where: { subjectKey: { in: keys } } });
+      expect(await fixturePrisma.pilotAccessRateLimitEvent.count({ where: { subjectKey: { in: keys } } })).toBe(0);
       keys = [];
     }
   });

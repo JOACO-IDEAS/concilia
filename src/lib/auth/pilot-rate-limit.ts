@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import type { PilotAccessRateLimitScope } from "@/generated/prisma/enums";
 
 export const PILOT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+// Ocho solicitudes simultáneas pueden esperar una conexión pooled antes de
+// comenzar la transacción. El default de Prisma (2 s) produce P2028 antes de
+// que los advisory locks tengan oportunidad de rechazar de forma segura.
+// Esto sólo extiende la adquisición; el timeout de ejecución no cambia.
+export const PILOT_RATE_LIMIT_TRANSACTION_MAX_WAIT_MS = 5_000;
 
 export const PILOT_RATE_LIMITS = {
   issueEmail: 3,
@@ -95,7 +100,7 @@ export async function enforcePilotRateLimit(
 
       await tx.pilotAccessRateLimitEvent.createMany({ data: subjects.map(({ scope, subjectKey }) => ({ scope, subjectKey, createdAt: now })) });
       return { allowed: true };
-    });
+    }, { maxWait: PILOT_RATE_LIMIT_TRANSACTION_MAX_WAIT_MS });
   } catch (error) {
     if (error instanceof PilotRateLimitUnavailableError) throw error;
     throw new PilotRateLimitUnavailableError();

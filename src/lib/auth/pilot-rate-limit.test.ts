@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = { scope: string; subjectKey: string; createdAt: Date };
-const state = vi.hoisted(() => ({ rows: [] as Row[], fail: false, chain: Promise.resolve() as Promise<unknown> }));
+const state = vi.hoisted(() => ({ rows: [] as Row[], fail: false, chain: Promise.resolve() as Promise<unknown>, transactionOptions: [] as Array<{ maxWait?: number }> }));
 
 vi.mock("@/lib/prisma", () => {
   const tx = {
@@ -12,7 +12,8 @@ vi.mock("@/lib/prisma", () => {
       createMany: vi.fn(async ({ data }: { data: Row[] }) => { state.rows.push(...data); return { count: data.length }; }),
     },
   };
-  return { prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => {
+  return { prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>, options?: { maxWait?: number }) => {
+    state.transactionOptions.push(options ?? {});
     const previous = state.chain;
     let release!: () => void;
     state.chain = new Promise<void>((resolve) => { release = resolve; });
@@ -21,12 +22,12 @@ vi.mock("@/lib/prisma", () => {
   }) } };
 });
 
-import { enforcePilotRateLimit, opaquePilotRateLimitKey, PILOT_RATE_LIMIT_WINDOW_MS, trustedVercelClientIp } from "./pilot-rate-limit";
+import { enforcePilotRateLimit, opaquePilotRateLimitKey, PILOT_RATE_LIMIT_TRANSACTION_MAX_WAIT_MS, PILOT_RATE_LIMIT_WINDOW_MS, trustedVercelClientIp } from "./pilot-rate-limit";
 
 const env = { CONCILIA_SESSION_SECRET: "s".repeat(32), VERCEL: "1" } as unknown as NodeJS.ProcessEnv;
 const now = new Date("2026-08-13T12:00:00.000Z");
 
-beforeEach(() => { state.rows.length = 0; state.fail = false; state.chain = Promise.resolve(); vi.clearAllMocks(); });
+beforeEach(() => { state.rows.length = 0; state.fail = false; state.chain = Promise.resolve(); state.transactionOptions.length = 0; vi.clearAllMocks(); });
 
 describe("pilot durable rate limit", () => {
   it("permite solicitudes legítimas y bloquea el cuarto email normalizado con Retry-After determinista", async () => {
@@ -47,6 +48,8 @@ describe("pilot durable rate limit", () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => enforcePilotRateLimit({ action: "consume", token: "invalid-token", ip: "203.0.113.30" }, now, env)));
     expect(results.filter((result) => result.allowed)).toHaveLength(5);
     expect(state.rows).toHaveLength(10);
+    expect(state.transactionOptions).toHaveLength(8);
+    expect(state.transactionOptions.every(({ maxWait }) => maxWait === PILOT_RATE_LIMIT_TRANSACTION_MAX_WAIT_MS)).toBe(true);
     expect(state.rows.every((row) => row.subjectKey !== "invalid-token")).toBe(true);
   });
 
