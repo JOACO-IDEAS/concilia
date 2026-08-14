@@ -18,7 +18,7 @@ export function RecentActivity({ activity }: { activity: RecentActivityViewModel
       {activity.status === "unavailable" ? (
         <OperationalEmptyState icon={<Inbox size={18} className="text-slate-400" />} message="La actividad reciente no está disponible en este entorno todavía." />
       ) : activity.entries.length === 0 ? (
-        <OperationalEmptyState icon={<Inbox size={18} className="text-slate-400" />} message="Todavía no hay actividad operativa para mostrar." />
+        <OperationalEmptyState icon={<Inbox size={18} className="text-slate-400" />} message={activity.contradictionNote ?? "Todavía no hay actividad operativa para mostrar."} />
       ) : (
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {activity.entries.map((entry) => (

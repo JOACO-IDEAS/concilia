@@ -12,6 +12,7 @@ const inboxSourceFiles = [
   "./DelinquencyCallout.tsx",
   "./OperationalHeader.tsx",
   "./OperationalSummary.tsx",
+  "./SetupJourney.tsx",
 ].map((relative) => readFileSync(new URL(relative, import.meta.url), "utf8"));
 
 describe("OperationalInbox — enlaces de Human Review y arquitectura del módulo", () => {
@@ -43,5 +44,13 @@ describe("OperationalInbox — enlaces de Human Review y arquitectura del módul
 
   it("no hay ningún control de AUTO en el módulo de Inicio", () => {
     for (const source of inboxSourceFiles) expect(source).not.toMatch(/\bAUTO\b/);
+  });
+
+  it("cada componente de fila con texto variable usa min-w-0 — regresión del overflow horizontal móvil (UX.3.1 sección 4)", () => {
+    const filesWithVariableText = ["./AttentionQueue.tsx", "./InformationQueue.tsx", "./RecentActivity.tsx", "./RecommendedNextStep.tsx", "./OperationalSummary.tsx", "./DelinquencyCallout.tsx", "./SetupJourney.tsx"];
+    for (const relative of filesWithVariableText) {
+      const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+      expect(source, `${relative} debería contener min-w-0`).toContain("min-w-0");
+    }
   });
 });

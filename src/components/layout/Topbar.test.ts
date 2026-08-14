@@ -43,4 +43,10 @@ describe("Topbar — identidad real, nunca hardcodeada", () => {
     expect(source).toContain('aria-label="Cerrar sesión"');
     expect(source).toMatch(/<form action=\{logoutAction\}>/);
   });
+
+  it("no muestra una campana de notificaciones sin función real (UX.3.1)", () => {
+    const source = readFileSync(new URL("./Topbar.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("Bell");
+    expect(source).not.toMatch(/bg-rose-500/);
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, LogOut, Menu, UserRound } from "lucide-react";
+import { LogOut, Menu, UserRound } from "lucide-react";
 import { useMobileNav } from "@/lib/mobile-nav";
 import { useCurrentAdministrator } from "@/lib/auth/current-administrator-context";
 import { logoutAction } from "@/app/acceso/actions";
@@ -60,13 +60,6 @@ export function Topbar({
 
       <div className="flex items-center gap-2 sm:gap-3">
         <HeaderSearch />
-        <button
-          type="button"
-          className="relative rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900"
-        >
-          <Bell size={18} />
-          <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2 rounded-full bg-rose-500" />
-        </button>
         {orgLabel ? (
           <span className="hidden max-w-[10rem] truncate text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
             {orgLabel}

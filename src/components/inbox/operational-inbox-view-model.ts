@@ -5,6 +5,7 @@ import type {
   RecentActivity as RecentActivityRecord,
 } from "@/app/operational-inbox-data";
 import { formatMonto, formatRelativeTime } from "@/lib/format";
+import { getFirstValueProgress, type FirstValueMilestone, type FirstValueMilestoneState } from "@/lib/first-value/progress";
 
 /**
  * Contrato presentacional de Inicio. Deliberadamente desacoplado de Prisma:
@@ -51,8 +52,27 @@ export type ActivityEntry = {
 };
 
 export type RecentActivityViewModel =
-  | { status: "available"; entries: ActivityEntry[] }
+  | { status: "available"; entries: ActivityEntry[]; contradictionNote?: string }
   | { status: "unavailable" };
+
+/** 3 pasos máximo — agregación honesta de los 6 hitos reales de
+ * `getFirstValueProgress` (nunca datos inventados). Cada paso expone el
+ * estado más "urgente" de sus hitos reales y, si aplica, el href/label real
+ * del primer hito accionable dentro de ese paso. */
+export type SetupStep = {
+  key: "CONFIGURE" | "IMPORT" | "REVIEW";
+  title: string;
+  detail: string;
+  state: FirstValueMilestoneState;
+  href?: string;
+  actionLabel?: string;
+};
+
+export type SetupJourneyViewModel = {
+  greetingContext: { title: string; explanation: string };
+  steps: SetupStep[];
+  primaryCta: { title: string; href: string; actionLabel: string } | null;
+};
 
 export type NextStep = {
   title: string;
@@ -74,7 +94,7 @@ export type OperationalInboxViewModel = {
   informationQueue: InformationCase[];
   recentActivity: RecentActivityViewModel;
   nextStep: NextStep | null;
-  showSetupJourney: boolean;
+  setupJourney: SetupJourneyViewModel | null;
   quickActions: QuickAction[];
   delinquency: { href: string };
 };
@@ -111,25 +131,39 @@ function buildInformationQueue(data: OperationalInboxData): InformationCase[] {
     organizationName: payment.organizationName,
     amountLabel: formatMonto(payment.amount, payment.currency),
     referenceLabel: payment.concept ?? "Sin referencia",
-    reason: "ConcilIA todavía no encontró evidencia suficiente para vincular este pago con una unidad.",
+    reason: "Todavía no hay evidencia suficiente para vincular este pago con una unidad.",
     ageLabel: formatRelativeTime(payment.createdAt),
     href: `/conciliacion/resolver/${payment.id}`,
   }));
 }
 
+/** Invariante de consistencia (sección 7): `resolvedToday` viene de una
+ * consulta independiente de `recentActivity` — en teoría podrían discreparse
+ * (ej. la decisión de hoy quedó fuera de la ventana `take:8` compartida por
+ * ser más vieja que otros 8 eventos). Cuando eso ocurre, nunca se muestra un
+ * "sin actividad" liso que contradiga visualmente al resumen — se aclara la
+ * causa real en vez de ocultarla u ocultar el número. */
+export function hasContradictoryEmptyActivity(entries: ActivityEntry[], resolvedTodayCount: number): boolean {
+  return entries.length === 0 && resolvedTodayCount > 0;
+}
+
 function buildRecentActivity(data: OperationalInboxData): RecentActivityViewModel {
-  if (data.recentActivity.length === 0) return { status: "available", entries: [] };
-  return {
-    status: "available",
-    entries: data.recentActivity.map((activity) => ({
-      id: activity.id,
-      kind: activity.kind,
-      title: activity.title,
-      organizationName: activity.organizationName,
-      detail: activity.detail,
-      whenLabel: formatRelativeTime(activity.createdAt),
-    })),
-  };
+  const entries: ActivityEntry[] = data.recentActivity.map((activity) => ({
+    id: activity.id,
+    kind: activity.kind,
+    title: activity.title,
+    organizationName: activity.organizationName,
+    detail: activity.detail,
+    whenLabel: formatRelativeTime(activity.createdAt),
+  }));
+  if (hasContradictoryEmptyActivity(entries, data.resolvedToday)) {
+    return {
+      status: "available",
+      entries,
+      contradictionNote: `Se ${data.resolvedToday === 1 ? "resolvió 1 caso" : `resolvieron ${data.resolvedToday} casos`} hoy, pero no aparece en esta muestra reciente.`,
+    };
+  }
+  return { status: "available", entries };
 }
 
 /** "Procesados hoy" no existe como campo propio en los datos actuales — se
@@ -190,11 +224,51 @@ function buildNextStep(reviewQueueAvailable: boolean, reviewItems: OperationalRe
   return null;
 }
 
+const STEP_ORDER: FirstValueMilestoneState[] = ["BLOCKED", "CURRENT", "PENDING", "COMPLETE"];
+function mostUrgent(states: FirstValueMilestoneState[]): FirstValueMilestoneState {
+  for (const candidate of STEP_ORDER) if (states.includes(candidate)) return candidate;
+  return "PENDING";
+}
+function firstActionable(milestones: FirstValueMilestone[]): FirstValueMilestone | undefined {
+  return milestones.find((milestone) => milestone.href && (milestone.state === "CURRENT" || milestone.state === "BLOCKED"));
+}
+
+/** Agrega los 6 hitos reales de `getFirstValueProgress` a 3 pasos máximo,
+ * sin inventar ningún dato: cada paso toma el estado más urgente y el
+ * href/acción real del primer hito accionable dentro de su grupo. Un
+ * consorcio creado pero sin unidades/obligaciones cargadas NO cuenta como
+ * "configurado" — el paso 1 sólo llega a COMPLETE cuando los 3 hitos que
+ * agrupa lo están. */
+function buildSetupJourney(data: OperationalInboxData, firstReviewableStatus: FirstReviewableCaseStatus, firstReviewableCaseHref: string | undefined): SetupJourneyViewModel | null {
+  if (data.onboarding.firstDecisionCount > 0) return null;
+  const progress = getFirstValueProgress(data, firstReviewableStatus, firstReviewableCaseHref);
+  const byKey = (keys: FirstValueMilestone["key"][]) => progress.milestones.filter((m) => keys.includes(m.key));
+
+  const configureGroup = byKey(["ORGANIZATION", "UNITS", "OBLIGATIONS"]);
+  const importGroup = byKey(["PAYMENTS"]);
+  const reviewGroup = byKey(["ASSESSMENT", "REVIEWABLE_CASE"]);
+
+  const steps: SetupStep[] = [
+    { key: "CONFIGURE", title: "Configurá tu consorcio", detail: "Consorcio, unidades y obligaciones — la base para identificar pagos.", state: mostUrgent(configureGroup.map((m) => m.state)), href: firstActionable(configureGroup)?.href, actionLabel: firstActionable(configureGroup)?.action },
+    { key: "IMPORT", title: "Importá movimientos", detail: "Subí un extracto real para que ConcilIA empiece a analizar pagos.", state: mostUrgent(importGroup.map((m) => m.state)), href: firstActionable(importGroup)?.href, actionLabel: firstActionable(importGroup)?.action },
+    { key: "REVIEW", title: "Revisá tu primer caso", detail: "ConcilIA te va a mostrar la evidencia para que decidas.", state: mostUrgent(reviewGroup.map((m) => m.state)), href: firstActionable(reviewGroup)?.href, actionLabel: firstActionable(reviewGroup)?.action },
+  ];
+
+  const activeStep = steps.find((step) => step.href && (step.state === "CURRENT" || step.state === "BLOCKED"));
+  return {
+    greetingContext: { title: "Prepará tu primer caso", explanation: "Tres pasos reales, derivados del estado actual de tus consorcios." },
+    steps,
+    primaryCta: activeStep?.href ? { title: activeStep.title, href: activeStep.href, actionLabel: activeStep.actionLabel ?? "Continuar" } : null,
+  };
+}
+
 export function buildOperationalInboxViewModel(
   data: OperationalInboxData,
   reviewItems: OperationalReviewItem[],
   reviewQueueAvailable: boolean,
+  firstReviewableStatus: FirstReviewableCaseStatus,
 ): OperationalInboxViewModel {
+  const firstReviewableCaseHref = reviewItems[0] ? `/conciliacion/resolver/${reviewItems[0].paymentTransactionId}` : undefined;
   return {
     summary: {
       needsDecision: buildNeedsDecisionMetric(reviewQueueAvailable, reviewItems),
@@ -206,7 +280,7 @@ export function buildOperationalInboxViewModel(
     informationQueue: buildInformationQueue(data),
     recentActivity: buildRecentActivity(data),
     nextStep: buildNextStep(reviewQueueAvailable, reviewItems, data),
-    showSetupJourney: data.onboarding.firstDecisionCount === 0,
+    setupJourney: buildSetupJourney(data, firstReviewableStatus, firstReviewableCaseHref),
     quickActions: [
       { label: "Cargar extracto", href: "/conciliacion" },
       { label: "Importar consorcio", href: "/importar" },

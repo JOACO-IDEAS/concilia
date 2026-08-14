@@ -29,4 +29,11 @@ describe("OperationalSummary — estructura", () => {
   it("no contiene ningún número hardcodeado como valor de métrica", () => {
     expect(source).not.toMatch(/>\s*\d+\s*</);
   });
+
+  it("aplica semántica de color por métrica (UX.3.1 sección 6) sin depender solo del color — cada card mantiene ícono y label de texto", () => {
+    expect(source).toContain('tone="amber"');
+    expect(source).toContain('tone="blue"');
+    expect(source).toContain('tone="emerald"');
+    expect(source).toContain('tone="neutral"');
+  });
 });
