@@ -24,8 +24,11 @@ export interface ResultadoRecordatorio {
  * existe para no bombardear a la organización de intentos de contacto, sea
  * cual sea el resultado real de la entrega en Meta.
  */
-export async function sendWhatsAppPaymentReminder(organizationId: string): Promise<ResultadoRecordatorio> {
-  const mora = await calcularMoraDeUnaOrganizacion(organizationId);
+export async function sendWhatsAppPaymentReminder(
+  organizationId: string,
+  administratorId: string
+): Promise<ResultadoRecordatorio> {
+  const mora = await calcularMoraDeUnaOrganizacion(organizationId, administratorId);
   if (!mora) {
     return { ok: false, omitido: false, motivo: "La organización no existe o no está en mora." };
   }
@@ -36,8 +39,8 @@ export async function sendWhatsAppPaymentReminder(organizationId: string): Promi
     return { ok: true, omitido: true, motivo: `Ya se le notificó el ${mora.ultimoRecordatorioEnviado}.` };
   }
 
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
+  const org = await prisma.organization.findFirst({
+    where: { id: organizationId, administrators: { some: { administratorId } } },
     select: {
       name: true,
       channels: {

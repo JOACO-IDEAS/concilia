@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { detectarOrganizacionesEnMora, type OrganizacionEnMora } from "@/lib/delinquency/detect-overdue";
 import { sendWhatsAppPaymentReminder } from "@/lib/whatsapp/send-reminder-whatsapp";
+import { requireCurrentAdministrator } from "@/lib/auth/session";
+import { requireOrganizationAccess } from "@/lib/auth/organization-access";
 
 const LOG = "[morosidad]";
 
@@ -24,7 +26,8 @@ export interface ListaMorosidadResultado {
  */
 export async function getOverdueOrganizations(): Promise<ListaMorosidadResultado> {
   try {
-    const organizaciones = await detectarOrganizacionesEnMora();
+    const administrator = await requireCurrentAdministrator();
+    const organizaciones = await detectarOrganizacionesEnMora(administrator.id);
     return { ok: true, organizaciones };
   } catch (e) {
     return {
@@ -39,7 +42,9 @@ export async function getOverdueOrganizations(): Promise<ListaMorosidadResultado
 export async function enviarRecordatorioIndividual(
   organizationId: string
 ): Promise<{ ok: boolean; omitido: boolean; motivo?: string }> {
-  const resultado = await sendWhatsAppPaymentReminder(organizationId);
+  const administrator = await requireCurrentAdministrator();
+  await requireOrganizationAccess(organizationId);
+  const resultado = await sendWhatsAppPaymentReminder(organizationId, administrator.id);
   revalidatePath("/morosidad");
   return resultado;
 }
@@ -59,12 +64,13 @@ export interface ResultadoReclamadorAutomatico {
  * envío (eso queda en el log del servidor y en `PaymentReminder`).
  */
 export async function ejecutarReclamadorAutomatico(): Promise<ResultadoReclamadorAutomatico> {
-  const organizaciones = await detectarOrganizacionesEnMora();
+  const administrator = await requireCurrentAdministrator();
+  const organizaciones = await detectarOrganizacionesEnMora(administrator.id);
   const paraNotificar = organizaciones.filter((o) => o.puedeNotificar);
   const omitidosPorCooldown = organizaciones.length - paraNotificar.length;
 
   after(() => {
-    Promise.allSettled(paraNotificar.map((o) => sendWhatsAppPaymentReminder(o.organizationId))).then(
+    Promise.allSettled(paraNotificar.map((o) => sendWhatsAppPaymentReminder(o.organizationId, administrator.id))).then(
       (resultados) => {
         const fallidos = resultados.filter((r) => r.status === "rejected").length;
         console.log(

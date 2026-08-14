@@ -8,6 +8,10 @@ export const REMINDER_COOLDOWN_DAYS = 3;
 
 const CICLO_DEFAULT_DIAS = 30;
 
+const organizationScope = (administratorId: string) => ({
+  administrators: { some: { administratorId } },
+});
+
 export interface OrganizacionEnMora {
   organizationId: string;
   organizationName: string;
@@ -101,11 +105,11 @@ function calcularMora(org: OrganizacionParaMora, ahora: Date): OrganizacionEnMor
   };
 }
 
-/** Todas las organizaciones activas en mora, ordenadas por días de atraso descendente. */
-export async function detectarOrganizacionesEnMora(): Promise<OrganizacionEnMora[]> {
+/** Organizaciones activas en mora del administrador, ordenadas por días de atraso descendente. */
+export async function detectarOrganizacionesEnMora(administratorId: string): Promise<OrganizacionEnMora[]> {
   const ahora = new Date();
   const organizaciones = await prisma.organization.findMany({
-    where: { status: "ACTIVE", deletedAt: null },
+    where: { status: "ACTIVE", deletedAt: null, ...organizationScope(administratorId) },
     select: selectOrganizacionParaMora,
   });
 
@@ -119,10 +123,11 @@ export async function detectarOrganizacionesEnMora(): Promise<OrganizacionEnMora
 
 /** Igual que `detectarOrganizacionesEnMora`, para una sola organización — usado al enviar un recordatorio. */
 export async function calcularMoraDeUnaOrganizacion(
-  organizationId: string
+  organizationId: string,
+  administratorId: string
 ): Promise<OrganizacionEnMora | null> {
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
+  const org = await prisma.organization.findFirst({
+    where: { id: organizationId, ...organizationScope(administratorId) },
     select: selectOrganizacionParaMora,
   });
   if (!org) return null;
