@@ -12,8 +12,11 @@ export interface OrganizacionBusquedaDTO {
 /**
  * Búsqueda global de organizaciones (consorcios reales, no el mock de
  * `useAppStore`) para el Command Palette del header — por nombre o CUIT.
- * Sin página de detalle por organización todavía, así que el resultado
- * navega a `/conciliacion` (no hay a dónde más llevarlo hoy).
+ * Sólo busca consorcios, nunca unidades (ver placeholder honesto en
+ * `HeaderSearch.tsx`). Sin página de detalle por organización todavía, así
+ * que el resultado navega a `/unidades-config` (padrón de unidades) sin
+ * preseleccionar el consorcio elegido — no hay a dónde más específico
+ * llevarlo hoy.
  */
 export async function buscarOrganizaciones(query: string): Promise<OrganizacionBusquedaDTO[]> {
   const texto = query.trim();

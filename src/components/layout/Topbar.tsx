@@ -80,16 +80,23 @@ export function Topbar({
             <UserRound size={18} />
           </div>
         )}
-        <form action={logoutAction}>
-          <button
-            type="submit"
-            aria-label="Cerrar sesión"
-            title="Cerrar sesión"
-            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900"
-          >
-            <LogOut size={18} />
-          </button>
-        </form>
+        {/* Separador visual + hover distintivo (TASK CLAUDE UX.4 §C.2): el
+            control de logout quedaba visualmente igual a los demás íconos
+            del Topbar — ahora se agrupa aparte de la identidad y, al pasar
+            el mouse, se distingue como una acción de cierre de sesión, sin
+            agregar texto que ensanche la barra. */}
+        <div className="ml-1 border-l border-slate-200 pl-2 dark:border-slate-800">
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-800 dark:text-slate-400 dark:hover:border-rose-900 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+            >
+              <LogOut size={18} />
+            </button>
+          </form>
+        </div>
       </div>
     </header>
   );

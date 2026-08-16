@@ -97,7 +97,7 @@ export function HeaderSearch() {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           onKeyDown={onKeyDownInput}
-          placeholder="Buscar unidad, consorcio…"
+          placeholder="Buscar consorcio…"
           className="w-48 bg-transparent text-slate-700 placeholder:text-slate-400 focus:outline-none dark:text-slate-200"
         />
         {buscandoOrgs ? <Loader2 size={14} className="shrink-0 animate-spin text-slate-400" /> : null}

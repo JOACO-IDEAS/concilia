@@ -49,4 +49,13 @@ describe("Topbar — identidad real, nunca hardcodeada", () => {
     expect(source).not.toContain("Bell");
     expect(source).not.toMatch(/bg-rose-500/);
   });
+
+  it("logout más descubrible (hover distintivo + separador) sin agregar texto que ensanche la Topbar (UX.4 §C.2)", () => {
+    const source = readFileSync(new URL("./Topbar.tsx", import.meta.url), "utf8");
+    expect(source).toContain("hover:bg-rose-50");
+    expect(source).toContain("border-l border-slate-200");
+    // Sigue siendo un botón sólo-ícono — ningún texto visible tipo "Salir"
+    // agregado junto al ícono que ensanche la barra.
+    expect(source).not.toMatch(/<LogOut[^>]*\/>\s*(Salir|Cerrar sesión)\s*</);
+  });
 });
