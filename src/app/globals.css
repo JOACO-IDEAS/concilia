@@ -1,8 +1,29 @@
 @import "tailwindcss";
 
+/* TASK CLAUDE UX.4 — fundación de tema claro determinístico para v1.
+ * Redefine el activador de `dark:` de Tailwind: por defecto (sin esta
+ * línea) Tailwind v4 activa `dark:` vía `@media (prefers-color-scheme:
+ * dark)`, lo que hacía que el tema cambiara solo según el sistema
+ * operativo del usuario. Acá pasa a depender EXCLUSIVAMENTE de una clase
+ * `.dark` explícita en un ancestro — y esa clase nunca se aplica en
+ * ningún lugar del código (verificado: ningún componente la agrega a
+ * `<html>`/`<body>`). Todas las variantes `dark:` existentes en el resto
+ * del proyecto quedan intactas en el código pero dormidas — no se
+ * eliminan ni se reescriben componentes, sólo se apaga el interruptor
+ * automático. Reactivar el tema oscuro en el futuro (si se decide) es
+ * tan simple como aplicar la clase `dark` a `<html>` bajo una condición
+ * explícita — no requiere tocar ningún componente. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Los controles nativos (checkbox, radio, select, scrollbar, date
+     picker) y el autofill del navegador siguen su propia heurística de
+     color independiente de las clases `dark:` de Tailwind — sin esto,
+     un navegador con el sistema en modo oscuro podría seguir pintando
+     controles nativos oscuros aunque toda la UI de la app sea clara. */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,13 +33,6 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -26,21 +40,13 @@ body {
 }
 
 /* Alcance exclusivo al acceso piloto: Chrome no debe reemplazar el contraste
-   explícito del campo cuando ofrece una dirección recordada. */
+   explícito del campo cuando ofrece una dirección recordada. Un solo estado
+   (claro) — determinístico independientemente del sistema operativo. */
 .pilot-access-email:-webkit-autofill,
 .pilot-access-email:-webkit-autofill:hover,
 .pilot-access-email:-webkit-autofill:focus {
   -webkit-text-fill-color: #020617;
   box-shadow: 0 0 0 1000px #ffffff inset;
-}
-
-@media (prefers-color-scheme: dark) {
-  .pilot-access-email:-webkit-autofill,
-  .pilot-access-email:-webkit-autofill:hover,
-  .pilot-access-email:-webkit-autofill:focus {
-    -webkit-text-fill-color: #f8fafc;
-    box-shadow: 0 0 0 1000px #0f172a inset;
-  }
 }
 
 @keyframes conciliia-fade-in-up {
