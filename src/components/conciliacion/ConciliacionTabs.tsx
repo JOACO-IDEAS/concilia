@@ -8,8 +8,15 @@ import { CircleCheck } from "lucide-react";
 
 /**
  * Flujo único de "Pagos" — ya no hay tabs entre Webhooks/Extractos/Manual:
- * son pasos de una misma tarea (cargar → aprobar lo que falta → ver lo ya
- * resuelto), no alternativas que el usuario tenga que elegir.
+ * son pasos de una misma tarea (aprobar lo que falta → cargar más → ver lo
+ * ya resuelto), no alternativas que el usuario tenga que elegir.
+ *
+ * TASK UX 5.0 — orden por excepción: lo que requiere una decisión ahora va
+ * primero (es la razón por la que alguien entra a esta pantalla la mayoría
+ * de los días); cargar un extracto nuevo es una acción disponible siempre,
+ * pero no compite por el primer lugar con un caso pendiente real. El
+ * historial de lo ya resuelto queda al final — confirma que el trabajo
+ * anterior se completó, no es lo que hay que decidir hoy.
  */
 export function ConciliacionTabs({
   datosWebhooks,
@@ -24,12 +31,12 @@ export function ConciliacionTabs({
 
   return (
     <div className="space-y-6">
-      <StatementIngestionPanel />
-
       <AtencionRequeridaCard
         datosIniciales={bandeja}
         organizaciones={datosWebhooks.ok ? datosWebhooks.organizaciones : []}
       />
+
+      <StatementIngestionPanel />
 
       {historial.length > 0 ? (
         <Card className="animate-fade-in-up">
