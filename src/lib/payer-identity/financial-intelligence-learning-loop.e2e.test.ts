@@ -138,4 +138,81 @@ describe("Financial Intelligence logical learning loop E2E", () => {
     const crossTenant = resolve([{ ...base, organizationId: "org-b", unitId: "unit-2a", status: "OBSERVED", supportCount: 99 }]);
     expect(crossTenant).toEqual(noHistory);
   });
+
+  it("progressively crosses the real three-support threshold and reduces human touch", async () => {
+    const payments: ReturnType<typeof resolve>[] = [];
+    const measurements: ReturnType<typeof measureHumanTouch>[] = [];
+    const decisions: any[] = [];
+
+    for (let paymentNumber = 1; paymentNumber <= 4; paymentNumber++) {
+      const resolution = resolve(memoryFromState());
+      payments.push(resolution);
+      measurements.push(measureHumanTouch(resolution));
+      if (!resolution.requiresConfirmation) continue;
+
+      const persistedDecision = {
+        id: `decision-human-${paymentNumber}`, decision: "APPROVED", paymentTransactionId: `payment-${paymentNumber}`,
+        unitId: "unit-2a", decidedBy: "admin-1", createdAt: new Date(`2026-08-${20 + paymentNumber}T12:00:00Z`),
+        paymentTransaction: { organizationId: "org-a" }, unit: { id: "unit-2a", organizationId: "org-a", deletedAt: null },
+      };
+      decisions.push(persistedDecision);
+      state.decision = persistedDecision;
+      await expect(learnFromPersistedHumanConfirmation(persistedDecision.id, "admin-1")).resolves.toMatchObject({ status: "LEARNED", eventsPersisted: 1 });
+    }
+
+    expect(payments.map((payment) => ({
+      support: payment.primaryCandidate?.historical.supportCount,
+      financial: payment.primaryCandidate?.financialScore,
+      historical: payment.primaryCandidate?.identityMemoryScore,
+      decision: payment.primaryCandidate?.decisionScore,
+      confirmation: payment.requiresConfirmation,
+      removed: payment.diagnostics.historyRemovedConfirmation,
+    }))).toEqual([
+      { support: 0, financial: 90, historical: 0, decision: 90, confirmation: true, removed: false },
+      { support: 1, financial: 90, historical: 4, decision: 94, confirmation: true, removed: false },
+      { support: 2, financial: 90, historical: 8, decision: 98, confirmation: true, removed: false },
+      { support: 3, financial: 90, historical: 12, decision: 102, confirmation: false, removed: true },
+    ]);
+    expect(state.associations).toEqual([expect.objectContaining({ signalId: "signal-x", unitId: "unit-2a", supportCount: 3, observationCount: 3 })]);
+    expect(state.events.map((event) => event.reconciliationMatchId)).toEqual(["decision-human-1", "decision-human-2", "decision-human-3"]);
+    expect(payments[1].explanation.join(" ")).toContain("1 soporte histórico activo");
+    expect(payments[2].explanation.join(" ")).toContain("2 soportes históricos activos");
+    expect(payments[3].explanation.join(" ")).toContain("3 soportes históricos activos");
+    expect(JSON.stringify(payments[3])).not.toContain("AUTO");
+
+    const prefixes = measurements.map((_, index) => aggregateHumanTouchMetrics(measurements.slice(0, index + 1)));
+    expect(prefixes.map((metrics) => ({ eligible: metrics.htrEligibleCases, touch: metrics.humanTouchCases, htr: metrics.humanTouchRate, straight: metrics.straightThroughResolutionRate, lift: metrics.historicalLiftCount }))).toEqual([
+      { eligible: 1, touch: 1, htr: 1, straight: 0, lift: 0 },
+      { eligible: 2, touch: 2, htr: 1, straight: 0, lift: 0 },
+      { eligible: 3, touch: 3, htr: 1, straight: 0, lift: 0 },
+      { eligible: 4, touch: 3, htr: 0.75, straight: 0.25, lift: 1 },
+    ]);
+    expect(prefixes[3]).toMatchObject({ historicalLiftEligibleCases: 3, historicalLiftCount: 1, historicalLiftRate: 1 / 3 });
+
+    state.decision = decisions[0];
+    await expect(learnFromPersistedHumanConfirmation("decision-human-1", "admin-1")).resolves.toMatchObject({ status: "ALREADY_APPLIED", eventsPersisted: 0 });
+    expect(state.associations[0].supportCount).toBe(3);
+    expect(state.events).toHaveLength(3);
+
+    const cleanMemory = memoryFromState();
+    const noHistory = resolve([]);
+    expect(noHistory).toMatchObject({ requiresConfirmation: true, primaryCandidate: { financialScore: 90, identityMemoryScore: 0 } });
+
+    const contradicted = resolve(cleanMemory.map((item) => ({ ...item, contradictionCount: 1 })));
+    expect(contradicted).toMatchObject({ requiresConfirmation: true, diagnostics: { historyRemovedConfirmation: false }, primaryCandidate: { historical: { contradictionCount: 1 } } });
+
+    const multiUnit = resolve([...cleanMemory, { organizationId: "org-a", unitId: "unit-7c", payerId: null, signalId: "signal-x", status: "OBSERVED", supportCount: 1, contradictionCount: 0, evidence: [] }], [candidate("unit-2a", 90), candidate("unit-7c", 60)]);
+    expect(multiUnit).toMatchObject({ requiresConfirmation: true, diagnostics: { historyRemovedConfirmation: false } });
+    expect(toReconciliationIntelligenceViewModel(multiUnit).multiUnitHistory).toBe(true);
+
+    const disputed = resolve(cleanMemory.map((item) => ({ ...item, status: "DISPUTED" })));
+    expect(disputed).toMatchObject({ requiresConfirmation: true, diagnostics: { historyRemovedConfirmation: false }, primaryCandidate: { historical: { disputed: true, contribution: 3 } } });
+
+    const revoked = resolve(cleanMemory.map((item) => ({ ...item, status: "REVOKED" })));
+    expect(revoked).toMatchObject({ requiresConfirmation: true, diagnostics: { historyRemovedConfirmation: false }, primaryCandidate: { identityMemoryScore: 0 } });
+    expect(measureHumanTouch(contradicted).historyRemovedConfirmation).toBe(false);
+    expect(measureHumanTouch(multiUnit).straightThroughResolution).toBe(false);
+    expect(measureHumanTouch(disputed).historyRemovedConfirmation).toBe(false);
+    expect(measureHumanTouch(revoked).historyPresent).toBe(false);
+  });
 });
