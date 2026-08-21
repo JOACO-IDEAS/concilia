@@ -31,8 +31,9 @@ describe("focusTrapTarget — trampa de foco del drawer móvil (sin DOM, lógica
 });
 
 describe("Sidebar — navegación canónica del piloto", () => {
-  it("contiene exactamente los 4 destinos canónicos decididos por Product Owner", () => {
+  it("contiene los 5 destinos canónicos, incluido Agente", () => {
     expect(source).toContain('{ href: "/", label: "Inicio"');
+    expect(source).toContain('{ href: "/agente", label: "Agente"');
     expect(source).toContain('{ href: "/conciliacion", label: "Conciliación"');
     expect(source).toContain('{ href: "/consorcios", label: "Consorcios"');
     expect(source).toContain('{ href: "/configuracion", label: "Configuración"');
@@ -63,7 +64,7 @@ describe("Sidebar — navegación canónica del piloto", () => {
     const emojiPattern = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
     expect(emojiPattern.test(source)).toBe(false);
     expect(source).toContain('from "lucide-react"');
-    expect(source).toMatch(/icon: (Home|InboxIcon|Building2|Settings)/);
+    expect(source).toMatch(/icon: (Home|Bot|InboxIcon|Building2|Settings)/);
   });
 
   it("el drawer móvil respeta el ancho máximo min(320px, 86vw)", () => {

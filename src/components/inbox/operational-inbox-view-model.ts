@@ -201,7 +201,7 @@ function buildResolvedTodayMetric(data: OperationalInboxData): SummaryMetric {
  * un número fijo: se deriva de las mismas dos métricas reales que las colas
  * de abajo ya calcularon. Si alguna no está disponible, no se arma un total
  * parcial engañoso. */
-function buildStatusLine(needsDecision: SummaryMetric, needsInformation: SummaryMetric): string | null {
+export function buildStatusLine(needsDecision: SummaryMetric, needsInformation: SummaryMetric): string | null {
   if (needsDecision.status !== "available" || needsInformation.status !== "available") return null;
   const total = needsDecision.value + needsInformation.value;
   const capped = needsDecision.capped || needsInformation.capped;

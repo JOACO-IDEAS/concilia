@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Home, Inbox as InboxIcon, Settings, X } from "lucide-react";
+import { Bot, Building2, Home, Inbox as InboxIcon, Settings, X } from "lucide-react";
 import { useMobileNav } from "@/lib/mobile-nav";
 import { Logo } from "./Logo";
 
@@ -14,7 +14,8 @@ interface NavItem {
 }
 
 // UX-2 — navegación canónica del piloto (decisión de Product Owner,
-// ADMIN_PANEL_INFORMATION_ARCHITECTURE_V1.md): exactamente estos 4 destinos.
+// ADMIN_PANEL_INFORMATION_ARCHITECTURE_V1.md), extendida por TASK 5.3A con
+// la interfaz conversacional tenant-scoped.
 // "Consorcios" apunta a /consorcios, el hub canónico — unidades y
 // obligaciones viven dentro de la ficha de cada consorcio, no como ítems
 // propios acá. Ningún módulo experimental o huérfano se agrega al sidebar.
@@ -23,6 +24,7 @@ interface NavItem {
 // renderizado de emoji del sistema operativo del usuario.
 const navItems: NavItem[] = [
   { href: "/", label: "Inicio", icon: Home },
+  { href: "/agente", label: "Agente", icon: Bot },
   { href: "/conciliacion", label: "Conciliación", icon: InboxIcon },
   { href: "/consorcios", label: "Consorcios", icon: Building2 },
   { href: "/configuracion", label: "Configuración", icon: Settings },

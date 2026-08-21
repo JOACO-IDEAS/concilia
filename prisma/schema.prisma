@@ -238,6 +238,16 @@ enum WhatsAppChannelConnectionStatus {
   INACTIVE
 }
 
+enum AgentConversationStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AgentMessageRole {
+  USER
+  ASSISTANT
+}
+
 enum PayerStatus {
   ACTIVE
   REVOKED
@@ -305,6 +315,7 @@ model Administrator {
   paymentEvidenceIntakesReceived    PaymentEvidenceIntake[]
   paymentEvidenceExtractionRuns     PaymentEvidenceExtractionRun[]
   whatsAppChannelConnectionsCreated WhatsAppChannelConnection[]
+  agentConversations                AgentConversation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -384,6 +395,8 @@ model Organization {
   paymentEvidenceExtractionRuns PaymentEvidenceExtractionRun[]
   paymentEvidenceFacts          PaymentEvidenceFact[]
   whatsAppChannelConnections    WhatsAppChannelConnection[]
+  agentConversations            AgentConversation[]
+  agentMessages                 AgentMessage[]
   payers                        Payer[]
   payerIdentitySignals          PayerIdentitySignal[]
   payerUnitAssociations         PayerUnitAssociation[]
@@ -923,6 +936,41 @@ model WhatsAppChannelConnection {
   @@index([organizationId, status])
   @@index([createdBy])
   @@map("whatsapp_channel_connections")
+}
+
+// Persistent, tenant-scoped conversational container. Capabilities execute
+// through an allowlisted service boundary; this model stores presentation
+// text only, never model/tool payloads or arbitrary JSON.
+model AgentConversation {
+  id              String                  @id @default(cuid())
+  organizationId  String
+  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  administratorId String
+  administrator   Administrator           @relation(fields: [administratorId], references: [id], onDelete: Restrict)
+  title           String?
+  status          AgentConversationStatus @default(ACTIVE)
+  messages        AgentMessage[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([id, organizationId])
+  @@index([administratorId, organizationId, status, updatedAt])
+  @@map("agent_conversations")
+}
+
+model AgentMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  organizationId String
+  conversation   AgentConversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role           AgentMessageRole
+  content        String
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("agent_messages")
 }
 
 // ----------------------------------------------------------------------------

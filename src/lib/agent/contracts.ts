@@ -1,0 +1,2 @@
+export const AGENT_MESSAGE_MAX_LENGTH = 2_000;
+export const AGENT_TITLE_MAX_LENGTH = 80;
