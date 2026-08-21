@@ -171,6 +171,29 @@ enum PaymentEvidenceCorrelationSource {
   HUMAN_REVIEW
 }
 
+enum PayerStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum PayerProvenanceSource {
+  HUMAN_REVIEW
+  IMPORT
+  SYSTEM_OBSERVATION
+}
+
+enum PayerIdentitySignalType {
+  PHONE
+  WHATSAPP
+  BANK_ACCOUNT
+  BANK_ALIAS
+  BANK_PAYER_NAME
+  TAX_ID
+  EMAIL
+  TRANSFER_IDENTIFIER
+  OTHER
+}
+
 // Eventos opacos y append-only de protección de acceso piloto. No contienen
 // email, IP, token ni hashes reutilizables: subjectKey es un HMAC con dominio.
 enum PilotAccessRateLimitScope {
@@ -191,6 +214,8 @@ model Administrator {
   organizations               OrganizationAdministrator[]
   pilotAccessTokens           PilotAccessToken[]
   paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
+  payersCreated               Payer[]
+  payerIdentitySignalsCreated PayerIdentitySignal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -266,6 +291,8 @@ model Organization {
   units                       Unit[]
   paymentNotices              PaymentNotice[]
   paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
+  payers                      Payer[]
+  payerIdentitySignals        PayerIdentitySignal[]
   // Fase 4 Parte C — Compliance Foundation. Relaciones inversas obligatorias
   // de Prisma (sintaxis, no crean ninguna columna real en esta tabla) — ver
   // ProviderOrganization/ProviderDocument más abajo.
@@ -921,6 +948,53 @@ model PaymentEvidenceCorrelation {
   @@index([evidenceAssessmentLogId])
   @@index([decidedBy])
   @@map("payment_evidence_correlations")
+}
+
+// Fase 5.0C — un pagador operativo tenant-scoped. No implica ownership,
+// occupancy ni responsabilidad legal, y no necesita apuntar a UnitOwner.
+// La memoria N:M payer↔unit y sus eventos de aprendizaje pertenecen a 5.0D.
+model Payer {
+  id              String                @id @default(cuid())
+  organizationId  String
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  displayName     String?
+  status          PayerStatus           @default(ACTIVE)
+  source          PayerProvenanceSource
+  reason          String
+  createdBy       String?
+  administrator   Administrator?        @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  identitySignals PayerIdentitySignal[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([organizationId, status])
+  @@index([createdBy])
+  @@map("payers")
+}
+
+// Señal extensible de identidad. Nunca guarda el valor crudo: fingerprint es
+// SHA-256 del valor normalizado y maskedValue sólo permite reconocimiento
+// visual mínimo. payerId nullable representa identidad todavía no resuelta sin
+// inventar un Payer "desconocido". No afirma una relación con ninguna unidad.
+model PayerIdentitySignal {
+  id                    String                  @id @default(cuid())
+  organizationId        String
+  organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payerId               String?
+  payer                 Payer?                  @relation(fields: [payerId], references: [id], onDelete: SetNull)
+  type                  PayerIdentitySignalType
+  normalizedFingerprint String
+  maskedValue           String
+  source                PayerProvenanceSource
+  reason                String
+  createdBy             String?
+  administrator         Administrator?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt             DateTime                @default(now())
+
+  @@unique([organizationId, type, normalizedFingerprint])
+  @@index([organizationId, payerId])
+  @@index([createdBy])
+  @@map("payer_identity_signals")
 }
 
 // ============================================================================
