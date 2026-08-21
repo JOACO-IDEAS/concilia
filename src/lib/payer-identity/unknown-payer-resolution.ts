@@ -1,22 +1,14 @@
 import type { CandidateEntry } from "@/lib/reconciliation/deterministic-matcher";
+import { MARGEN_AMBIGUEDAD_ACTUAL } from "@/lib/calibration/config-snapshot";
+import { historicalContribution, type HistoricalContribution, type HistoricalUnitMemory } from "./historical-recognition";
+
+export type { HistoricalContribution, HistoricalEvidence, HistoricalUnitMemory, MemoryStatus } from "./historical-recognition";
 
 export type UnknownPayerResolutionStatus =
   | "RESOLVED_CANDIDATE"
   | "AMBIGUOUS"
   | "INSUFFICIENT_EVIDENCE"
   | "NO_CANDIDATES";
-
-export type MemoryStatus = "OBSERVED" | "DISPUTED" | "REVOKED";
-
-export interface HistoricalUnitMemory {
-  organizationId: string;
-  unitId: string;
-  payerId: string | null;
-  signalId: string | null;
-  status: MemoryStatus;
-  supportCount: number;
-  contradictionCount: number;
-}
 
 export interface UnknownPayerResolutionInput {
   organizationId: string;
@@ -28,7 +20,7 @@ export interface UnknownPayerResolutionInput {
 }
 
 export interface ResolutionReason {
-  kind: "FINANCIAL" | "CORRELATION" | "HISTORICAL_SUPPORT" | "HISTORICAL_CONTRADICTION";
+  kind: "FINANCIAL" | "CORRELATION" | "HISTORICAL_SUPPORT" | "HISTORICAL_CONTRADICTION" | "HISTORICAL_STATE" | "HISTORICAL_CONFLICT";
   detail: string;
 }
 
@@ -37,6 +29,8 @@ export interface UnknownPayerCandidate {
   unitCode: string;
   obligationId: string | null;
   financialScore: number;
+  historical: HistoricalContribution;
+  /** Compatibility alias. The inspectable contribution lives in `historical`. */
   identityMemoryScore: number;
   decisionScore: number;
   reasons: ResolutionReason[];
@@ -48,54 +42,45 @@ export interface UnknownPayerResolution {
   primaryCandidate: UnknownPayerCandidate | null;
   explanation: string[];
   requiresConfirmation: boolean;
+  diagnostics: { historyChangedRanking: boolean; historyRemovedConfirmation: boolean; historicalConflict: boolean };
   provenance: {
     organizationId: string;
     payerId: string | null;
     signalId: string | null;
     durableCorrelation: boolean;
     financialScoring: "EXISTING_MATCHER";
-    historicalMemory: "PAYER_UNIT_ASSOCIATION" | "SIGNAL_UNIT_ASSOCIATION" | "NONE";
+    historicalMemory: "PAYER_UNIT_ASSOCIATION" | "SIGNAL_UNIT_ASSOCIATION" | "PAYER_AND_SIGNAL_ASSOCIATIONS" | "NONE";
   };
 }
 
-const AMBIGUITY_MARGIN = 10;
 const STRONG_MEMORY_SUPPORT = 3;
+const STRONG_FINANCIAL_TIERS = new Set([1, 2]);
 
 function applicableMemory(input: UnknownPayerResolutionInput, unitId: string) {
-  return input.memory.filter((item) => {
-    if (item.organizationId !== input.organizationId || item.unitId !== unitId || item.status === "REVOKED") return false;
-    if (input.signalId) return item.signalId === input.signalId;
-    return input.payerId !== null && item.payerId === input.payerId;
-  });
+  return input.memory.filter((item) => item.organizationId === input.organizationId && item.unitId === unitId);
 }
 
-function assessMemory(items: readonly HistoricalUnitMemory[]) {
-  let support = 0;
-  let contradiction = 0;
-  let disputed = false;
-  for (const item of items) {
-    support += Math.max(0, item.supportCount);
-    contradiction += Math.max(0, item.contradictionCount);
-    disputed ||= item.status === "DISPUTED";
-  }
-  const raw = Math.max(-20, Math.min(20, support * 4 - contradiction * 6));
-  return { support, contradiction, disputed, score: disputed ? Math.trunc(raw / 4) : raw };
+function assessMemory(input: UnknownPayerResolutionInput, unitId: string) {
+  return historicalContribution(applicableMemory(input, unitId), { organizationId: input.organizationId, signalId: input.signalId, payerId: input.payerId });
 }
 
-function reasonsFor(candidate: CandidateEntry, input: UnknownPayerResolutionInput, memory: ReturnType<typeof assessMemory>) {
+function reasonsFor(candidate: CandidateEntry, input: UnknownPayerResolutionInput, memory: HistoricalContribution) {
   const reasons: ResolutionReason[] = candidate.signals
-    .filter((signal) => signal.matched)
+    .filter((signal) => signal.matched && signal.evidence.trim())
     .map((signal) => ({ kind: "FINANCIAL" as const, detail: signal.evidence }));
   if (input.hasDurableCorrelation) reasons.push({ kind: "CORRELATION", detail: "El movimiento tiene una correlación durable confirmada." });
-  if (memory.support > 0) {
+  if (memory.supportCount > 0) {
     reasons.push({
       kind: "HISTORICAL_SUPPORT",
-      detail: `${memory.support} evidencia${memory.support === 1 ? "" : "s"} histórica${memory.support === 1 ? "" : "s"} activa${memory.support === 1 ? "" : "s"}${memory.disputed ? " (asociación disputada; peso reducido)" : ""}.`,
+      detail: `${memory.supportCount} soporte${memory.supportCount === 1 ? "" : "s"} histórico${memory.supportCount === 1 ? "" : "s"} activo${memory.supportCount === 1 ? "" : "s"}, desde ${memory.sources.join(" + ").toLowerCase()}.`,
     });
   }
-  if (memory.contradiction > 0) {
-    reasons.push({ kind: "HISTORICAL_CONTRADICTION", detail: `${memory.contradiction} contradicción${memory.contradiction === 1 ? "" : "es"} histórica${memory.contradiction === 1 ? "" : "s"} activa${memory.disputed ? "; asociación disputada" : ""}.` });
+  if (memory.contradictionCount > 0) {
+    reasons.push({ kind: "HISTORICAL_CONTRADICTION", detail: `${memory.contradictionCount} contradicción${memory.contradictionCount === 1 ? "" : "es"} histórica${memory.contradictionCount === 1 ? "" : "s"} reduce${memory.contradictionCount === 1 ? "" : "n"} el soporte.` });
   }
+  if (memory.disputed) reasons.push({ kind: "HISTORICAL_STATE", detail: "La asociación histórica está disputada; su contribución fue degradada." });
+  if (memory.revokedIgnored) reasons.push({ kind: "HISTORICAL_STATE", detail: "La evidencia histórica revocada fue ignorada." });
+  if (memory.deduplicatedByProvenance) reasons.push({ kind: "HISTORICAL_STATE", detail: "La evidencia payer + signal compartida se contó una sola vez." });
   return reasons;
 }
 
@@ -106,6 +91,7 @@ function emptyResult(input: UnknownPayerResolutionInput, status: "NO_CANDIDATES"
     primaryCandidate: null,
     explanation: [explanation],
     requiresConfirmation: true,
+    diagnostics: { historyChangedRanking: false, historyRemovedConfirmation: false, historicalConflict: false },
     provenance: provenance(input),
   };
 }
@@ -117,14 +103,13 @@ function provenance(input: UnknownPayerResolutionInput): UnknownPayerResolution[
     signalId: input.signalId,
     durableCorrelation: input.hasDurableCorrelation,
     financialScoring: "EXISTING_MATCHER",
-    historicalMemory: input.signalId ? "SIGNAL_UNIT_ASSOCIATION" : input.payerId ? "PAYER_UNIT_ASSOCIATION" : "NONE",
+    historicalMemory: input.signalId && input.payerId ? "PAYER_AND_SIGNAL_ASSOCIATIONS" : input.signalId ? "SIGNAL_UNIT_ASSOCIATION" : input.payerId ? "PAYER_UNIT_ASSOCIATION" : "NONE",
   };
 }
 
 /** Pure decision layer: consumes matcher output and memory projections; never persists or executes a reconciliation. */
 export function resolveUnknownPayer(input: UnknownPayerResolutionInput): UnknownPayerResolution {
   if (!input.organizationId.trim()) throw new Error("organizationId es obligatorio.");
-  if (input.payerId && input.signalId) throw new Error("La resolución acepta payerId o signalId, no ambos.");
   if (input.candidates.length === 0) return emptyResult(input, "NO_CANDIDATES", "No existen unidades u obligaciones elegibles.");
   if (!input.hasDurableCorrelation) return emptyResult(input, "INSUFFICIENT_EVIDENCE", "No existe una correlación durable que respalde la resolución.");
 
@@ -137,17 +122,19 @@ export function resolveUnknownPayer(input: UnknownPayerResolutionInput): Unknown
     if (!current || candidate.score > current.score) bestByUnit.set(candidate.unitId, candidate);
   }
 
-  const candidates = [...bestByUnit.values()]
-    .filter((candidate) => candidate.obligationId !== null && candidate.score > 0)
+  const eligible = [...bestByUnit.values()].filter((candidate) => candidate.obligationId !== null && candidate.score > 0);
+  const financialRanking = [...eligible].sort((a, b) => b.score - a.score || a.unitId!.localeCompare(b.unitId!));
+  const candidates = eligible
     .map((candidate): UnknownPayerCandidate => {
-      const memory = assessMemory(applicableMemory(input, candidate.unitId!));
+      const memory = assessMemory(input, candidate.unitId!);
       return {
         unitId: candidate.unitId!,
         unitCode: candidate.unitCode,
         obligationId: candidate.obligationId,
         financialScore: candidate.score,
-        identityMemoryScore: memory.score,
-        decisionScore: candidate.score + memory.score,
+        historical: memory,
+        identityMemoryScore: memory.contribution,
+        decisionScore: candidate.score + memory.contribution,
         reasons: reasonsFor(candidate, input, memory),
       };
     })
@@ -157,23 +144,42 @@ export function resolveUnknownPayer(input: UnknownPayerResolutionInput): Unknown
 
   const first = candidates[0];
   const second = candidates[1];
-  const ambiguous = second !== undefined && first.decisionScore - second.decisionScore <= AMBIGUITY_MARGIN;
-  const firstMemory = assessMemory(applicableMemory(input, first.unitId));
-  const historicallySupportedUnits = new Set(
-    input.memory
-      .filter((item) => item.organizationId === input.organizationId && item.status !== "REVOKED" && item.supportCount > 0)
-      .filter((item) => input.signalId ? item.signalId === input.signalId : input.payerId !== null && item.payerId === input.payerId)
-      .map((item) => item.unitId)
-  );
-  const requiresConfirmation = ambiguous || historicallySupportedUnits.size > 1 || firstMemory.disputed || firstMemory.contradiction > 0 || firstMemory.support < STRONG_MEMORY_SUPPORT;
+  const financialLeader = financialRanking[0];
+  const financialRunnerUp = financialRanking.find((candidate) => candidate.unitId !== financialLeader.unitId && candidate.tier === financialLeader.tier);
+  const financiallyAmbiguous = financialRunnerUp !== undefined && financialRunnerUp.score > 0 && financialLeader.score - financialRunnerUp.score <= MARGEN_AMBIGUEDAD_ACTUAL;
+  const hasActiveHistory = candidates.some((candidate) => candidate.historical.supportCount > 0 || candidate.historical.contradictionCount > 0);
+  const historyChangedRanking = first.unitId !== financialLeader.unitId;
+  const financialLeaderStrong = financialLeader.tier !== null && STRONG_FINANCIAL_TIERS.has(financialLeader.tier);
+  const historicalConflict = hasActiveHistory && historyChangedRanking && financialLeaderStrong;
+  const numericallyAmbiguous = second !== undefined && first.decisionScore - second.decisionScore <= MARGEN_AMBIGUEDAD_ACTUAL;
+  const firstOriginal = eligible.find((candidate) => candidate.unitId === first.unitId)!;
+  const financialFloorMet = firstOriginal.tier !== null && STRONG_FINANCIAL_TIERS.has(firstOriginal.tier);
+  if (hasActiveHistory && first.historical.contribution !== 0 && !financialFloorMet) {
+    return {
+      status: "INSUFFICIENT_EVIDENCE",
+      candidates,
+      primaryCandidate: null,
+      explanation: ["La memoria histórica aporta evidencia, pero la evidencia financiera no alcanza el piso mínimo para resolver."],
+      requiresConfirmation: true,
+      diagnostics: { historyChangedRanking, historyRemovedConfirmation: false, historicalConflict },
+      provenance: provenance(input),
+    };
+  }
+  const ambiguous = numericallyAmbiguous || financiallyAmbiguous || historicalConflict;
+  const supportedUnits = candidates.filter((candidate) => candidate.historical.supportCount > 0).length;
+  const cleanStrongHistory = first.historical.supportCount >= STRONG_MEMORY_SUPPORT && first.historical.contradictionCount === 0 && !first.historical.disputed;
+  const requiresConfirmation = ambiguous || supportedUnits > 1 || !cleanStrongHistory;
+  const historyRemovedConfirmation = !requiresConfirmation && hasActiveHistory;
+  if (historicalConflict) first.reasons.push({ kind: "HISTORICAL_CONFLICT", detail: `La evidencia financiera favorece ${financialLeader.unitCode}, mientras la memoria histórica favorece ${first.unitCode}.` });
   return {
     status: ambiguous ? "AMBIGUOUS" : "RESOLVED_CANDIDATE",
     candidates,
     primaryCandidate: ambiguous ? null : first,
     explanation: ambiguous
-      ? ["Hay más de una unidad plausible; la evidencia disponible no permite elegir una sin confirmación."]
+      ? historicalConflict ? [first.reasons.at(-1)!.detail] : ["Hay más de una unidad plausible; la evidencia disponible no permite elegir una sin confirmación."]
       : first.reasons.map((reason) => reason.detail),
     requiresConfirmation,
+    diagnostics: { historyChangedRanking, historyRemovedConfirmation, historicalConflict },
     provenance: provenance(input),
   };
 }

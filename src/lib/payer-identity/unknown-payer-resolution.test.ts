@@ -35,8 +35,8 @@ describe("resolveUnknownPayer", () => {
   });
 
   it("favorece historial fuerte compatible sin alterar el score financiero", () => {
-    const result = resolveUnknownPayer(input({ candidates: [candidate("2a", 80), candidate("4b", 78)], memory: [memory("4b")] }));
-    expect(result.primaryCandidate).toMatchObject({ unitId: "4b", financialScore: 78, identityMemoryScore: 20, decisionScore: 98 });
+    const result = resolveUnknownPayer(input({ candidates: [candidate("2a", 60), candidate("4b", 80)], memory: [memory("4b")] }));
+    expect(result.primaryCandidate).toMatchObject({ unitId: "4b", financialScore: 80, identityMemoryScore: 20, decisionScore: 100 });
     expect(result.requiresConfirmation).toBe(false);
   });
 
@@ -79,7 +79,7 @@ describe("resolveUnknownPayer", () => {
   });
 
   it("funciona con payer conocido multi-unit usando finanzas e historial", () => {
-    const result = resolveUnknownPayer(input({ payerId: "payer-1", signalId: null, candidates: [candidate("2a", 85), candidate("3b", 80)], memory: [memory("3b", { payerId: "payer-1", signalId: null })] }));
+    const result = resolveUnknownPayer(input({ payerId: "payer-1", signalId: null, candidates: [candidate("2a", 60), candidate("3b", 85)], memory: [memory("3b", { payerId: "payer-1", signalId: null })] }));
     expect(result.primaryCandidate?.unitId).toBe("3b");
     expect(result.provenance.historicalMemory).toBe("PAYER_UNIT_ASSOCIATION");
   });
@@ -95,12 +95,12 @@ describe("resolveUnknownPayer", () => {
     expect(result.explanation).toEqual([
       "Importe exacto para 2a.",
       "El movimiento tiene una correlación durable confirmada.",
-      "5 evidencias históricas activas.",
+      "5 soportes históricos activos, desde signal.",
     ]);
   });
 
-  it("reporta ausencia de candidatos y rechaza payer+signal simultáneos", () => {
+  it("reporta ausencia de candidatos y admite payer+signal para deduplicar memoria", () => {
     expect(resolveUnknownPayer(input({ candidates: [] })).status).toBe("NO_CANDIDATES");
-    expect(() => resolveUnknownPayer(input({ payerId: "payer-1" }))).toThrow("payerId o signalId");
+    expect(resolveUnknownPayer(input({ payerId: "payer-1" })).provenance.historicalMemory).toBe("PAYER_AND_SIGNAL_ASSOCIATIONS");
   });
 });
