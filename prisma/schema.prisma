@@ -171,6 +171,27 @@ enum PaymentEvidenceCorrelationSource {
   HUMAN_REVIEW
 }
 
+enum PaymentEvidenceIntakeSource {
+  WEB_UPLOAD
+  WHATSAPP
+  EMAIL
+  API
+  OTHER
+}
+
+enum PaymentEvidenceIntakeType {
+  IMAGE
+  PDF
+  TEXT
+  STRUCTURED_DATA
+}
+
+// Intake is an immutable receipt fact. Extraction/processing state belongs to
+// a future, separate projection rather than rewriting the original evidence.
+enum PaymentEvidenceIntakeState {
+  RECEIVED
+}
+
 enum PayerStatus {
   ACTIVE
   REVOKED
@@ -235,6 +256,7 @@ model Administrator {
   payersCreated                  Payer[]
   payerIdentitySignalsCreated    PayerIdentitySignal[]
   payerUnitEvidenceEventsCreated PayerUnitEvidenceEvent[]
+  paymentEvidenceIntakesReceived PaymentEvidenceIntake[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -310,6 +332,7 @@ model Organization {
   units                       Unit[]
   paymentNotices              PaymentNotice[]
   paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
+  paymentEvidenceIntakes      PaymentEvidenceIntake[]
   payers                      Payer[]
   payerIdentitySignals        PayerIdentitySignal[]
   payerUnitAssociations       PayerUnitAssociation[]
@@ -751,6 +774,31 @@ model PaymentNotice {
   @@index([status])
   @@index([linkedPaymentTransactionId])
   @@map("payment_notices")
+}
+
+// Canonical, channel-agnostic receipt of external payment evidence. This is
+// neither a payment claim (PaymentNotice), an assessment, nor a correlation.
+// Original provenance is append-only: there is intentionally no updatedAt and
+// this phase exposes create/read only. Binary/raw/OCR content never lives here.
+model PaymentEvidenceIntake {
+  id                     String                      @id @default(cuid())
+  organizationId         String
+  organization           Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  source                 PaymentEvidenceIntakeSource
+  evidenceType           PaymentEvidenceIntakeType
+  state                  PaymentEvidenceIntakeState  @default(RECEIVED)
+  externalReference      String?
+  storageReference       String?
+  declaredMimeType       String?
+  receivedAt             DateTime
+  receivedBy             String?
+  receivingAdministrator Administrator?              @relation(fields: [receivedBy], references: [id], onDelete: Restrict)
+  createdAt              DateTime                    @default(now())
+
+  @@unique([organizationId, source, externalReference])
+  @@index([organizationId, state, receivedAt])
+  @@index([receivedBy])
+  @@map("payment_evidence_intakes")
 }
 
 // ----------------------------------------------------------------------------
