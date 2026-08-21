@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { FIXTURES_HOST_FRAGMENT } from "./entornos";
 import { FixturesMigrationConfigurationError, planificarMigracionFixtures } from "./fixtures-migration-plan";
 
-const fixtures = (label: string) => `postgresql://user:pass@${FIXTURES_HOST_FRAGMENT}-${label}.example.com/neondb`;
+const fixtures = (label: string) =>
+  `postgresql://user:pass@${FIXTURES_HOST_FRAGMENT}${label === "pooled" ? "-pooler" : ""}.example.com/neondb?application_name=${label}`;
 
 describe("planificarMigracionFixtures", () => {
   it("A: DIRECT_URL gana y es exactamente el endpoint de preflight y migrate", () => {

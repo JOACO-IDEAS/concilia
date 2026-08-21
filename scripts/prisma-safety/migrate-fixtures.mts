@@ -33,5 +33,10 @@ const result = spawnSync(
   ["prisma", "migrate", "dev", "--url", plan.endpoint, ...process.argv.slice(2)],
   { cwd: APP_ROOT, env: { ...process.env, PRISMA_TARGET_ENV: "fixtures" }, stdio: "inherit" }
 );
-if (result.error) throw result.error;
+// Un Error de child_process puede incluir spawnargs; como spawnargs contiene
+// --url, jamás serializamos ni relanzamos ese objeto completo.
+if (result.error) {
+  console.error("[migrate-fixtures] No se pudo iniciar Prisma; detalle sensible omitido.");
+  process.exit(1);
+}
 process.exit(result.status ?? 1);

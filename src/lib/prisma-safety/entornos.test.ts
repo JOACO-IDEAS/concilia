@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  analizarHostNeon,
   detectarEntornoPorHost,
   esComandoRiesgoso,
   extraerHost,
@@ -13,6 +14,7 @@ import {
 const URL_PRODUCCION = `postgresql://user:pass@${PRODUCTION_HOST_FRAGMENT}-pooler.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require`;
 const URL_FIXTURES = `postgresql://user:pass@${FIXTURES_HOST_FRAGMENT}-pooler.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require`;
 const URL_DESCONOCIDA = `postgresql://user:pass@algun-otro-host.example.com/db`;
+const URL_FIXTURES_ANTERIOR = "postgresql://user:pass@ep-lively-smoke-aw6piqcw-pooler.c-12.us-east-1.aws.neon.tech/neondb";
 
 describe("extraerHost", () => {
   it("extrae el host de una URL válida", () => {
@@ -37,7 +39,21 @@ describe("detectarEntornoPorHost — fixtures/dev detectado correctamente", () =
   });
 });
 
+describe("analizarHostNeon — rol pooled/direct sin prefijos frágiles", () => {
+  it("extrae el mismo endpoint ID del hostname direct y pooled", () => {
+    expect(analizarHostNeon(`${FIXTURES_HOST_FRAGMENT}.c-12.us-east-1.aws.neon.tech`)).toEqual({ endpointId: FIXTURES_HOST_FRAGMENT, pooled: false });
+    expect(analizarHostNeon(`${FIXTURES_HOST_FRAGMENT}-pooler.c-12.us-east-1.aws.neon.tech`)).toEqual({ endpointId: FIXTURES_HOST_FRAGMENT, pooled: true });
+  });
+
+  it("no acepta IDs que sólo contengan la allowlist como prefijo", () => {
+    expect(detectarEntornoPorHost(`${FIXTURES_HOST_FRAGMENT}-otro.c-12.us-east-1.aws.neon.tech`)).toBe("unknown");
+  });
+});
+
 describe("detectarEntornoPorHost — ambigüedad", () => {
+  it("el endpoint de la branch fixtures anterior ya no está autorizado", () => {
+    expect(detectarEntornoPorHost(extraerHost(URL_FIXTURES_ANTERIOR))).toBe("unknown");
+  });
   it("host desconocido → 'unknown', nunca se adivina", () => {
     expect(detectarEntornoPorHost(extraerHost(URL_DESCONOCIDA))).toBe("unknown");
   });

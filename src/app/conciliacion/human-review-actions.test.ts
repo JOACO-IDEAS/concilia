@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FIXTURES_HOST_FRAGMENT } from "@/lib/prisma-safety/entornos";
 
 // Fase 5.12 — human-review-actions.ts contra un delegate de Prisma FALSO que
 // expone ÚNICAMENTE los métodos que el código realmente usa —
@@ -19,7 +20,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 // DIRECT_URL/DATABASE_URL_UNPOOLED), en vez de depender del `.env` real de
 // quien corre la suite.
 const HOST_PRODUCCION = "postgresql://u:p@ep-broad-unit-aw04mt2w-pooler.c-12.us-east-1.aws.neon.tech/db";
-const HOST_FIXTURES = "postgresql://u:p@ep-lively-smoke-aw6piqcw-pooler.c-12.us-east-1.aws.neon.tech/db";
+const HOST_FIXTURES = `postgresql://u:p@${FIXTURES_HOST_FRAGMENT}-pooler.c-12.us-east-1.aws.neon.tech/db`;
 
 async function conEntorno<T>(databaseUrl: string | undefined, fn: () => Promise<T>): Promise<T> {
   const originales = { DIRECT_URL: process.env.DIRECT_URL, DATABASE_URL_UNPOOLED: process.env.DATABASE_URL_UNPOOLED, DATABASE_URL: process.env.DATABASE_URL };

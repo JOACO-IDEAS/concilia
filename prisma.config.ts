@@ -2,6 +2,7 @@ import { config as loadEnv } from "dotenv";
 import { defineConfig } from "prisma/config";
 import {
   esComandoRiesgoso,
+  describirComandoPrismaSeguro,
   extraerUrlDeArgv,
   resolverDatasourceUrlDesdeEnv,
   verificarEntornoContraTarget,
@@ -38,7 +39,7 @@ const urlEfectiva = extraerUrlDeArgv(argv) ?? resolverDatasourceUrlDesdeEnv(proc
 if (esComandoRiesgoso(argv)) {
   const resultado = verificarEntornoContraTarget(urlEfectiva, process.env.PRISMA_TARGET_ENV);
   console.log(
-    `[prisma-safety] comando riesgoso detectado ("${argv.slice(2).join(" ")}") — host resuelto: ${resultado.host ?? "(ninguno)"} — entorno detectado: ${resultado.entornoDetectado} — target declarado (PRISMA_TARGET_ENV): ${resultado.targetDeclarado ?? "(no declarado)"}`
+    `[prisma-safety] comando riesgoso detectado ("${describirComandoPrismaSeguro(argv.slice(2))}") — host resuelto: ${resultado.host ?? "(ninguno)"} — entorno detectado: ${resultado.entornoDetectado} — target declarado (PRISMA_TARGET_ENV): ${resultado.targetDeclarado ?? "(no declarado)"}`
   );
   if (!resultado.ok) {
     console.error(`[prisma-safety] ABORTADO — ${resultado.motivo}`);

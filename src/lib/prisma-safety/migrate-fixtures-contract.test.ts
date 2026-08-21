@@ -16,4 +16,9 @@ describe("migrate-fixtures endpoint contract", () => {
     expect(shell).not.toContain("FIXTURES_URL");
     expect(shell).toContain("migrate-fixtures.mts");
   });
+
+  it("no relanza errores child_process que podrían serializar spawnargs con --url", () => {
+    expect(orchestrator).not.toContain("throw result.error");
+    expect(orchestrator).toContain("detalle sensible omitido");
+  });
 });

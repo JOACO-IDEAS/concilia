@@ -13,7 +13,7 @@
 // effort.
 
 export const PRODUCTION_HOST_FRAGMENT = "ep-broad-unit-aw04mt2w";
-export const FIXTURES_HOST_FRAGMENT = "ep-lively-smoke-aw6piqcw";
+export const FIXTURES_HOST_FRAGMENT = "ep-broad-lake-awdbdjwy";
 
 export type EntornoPrisma = "production" | "fixtures" | "unknown";
 
@@ -25,6 +25,15 @@ export interface ResultadoVerificacionEntorno {
   entornoDetectado: EntornoPrisma;
   targetDeclarado: TargetDeclarado | null;
   motivo: string;
+}
+
+export function analizarHostNeon(host: string | null | undefined): { endpointId: string; pooled: boolean } | null {
+  if (!host) return null;
+  const firstLabel = host.toLowerCase().split(":")[0].split(".")[0];
+  if (!firstLabel.startsWith("ep-") || firstLabel.length <= 3) return null;
+  const pooled = firstLabel.endsWith("-pooler");
+  const endpointId = pooled ? firstLabel.slice(0, -"-pooler".length) : firstLabel;
+  return { endpointId, pooled };
 }
 
 /** Extrae el host de una connection string — `null` si no es una URL válida (nunca lanza). */
@@ -44,9 +53,10 @@ export function extraerHost(url: string | null | undefined): string | null {
  * defecto.
  */
 export function detectarEntornoPorHost(host: string | null | undefined): EntornoPrisma {
-  if (!host) return "unknown";
-  const esProduccion = host.includes(PRODUCTION_HOST_FRAGMENT);
-  const esFixtures = host.includes(FIXTURES_HOST_FRAGMENT);
+  const neon = analizarHostNeon(host);
+  if (!neon) return "unknown";
+  const esProduccion = neon.endpointId === PRODUCTION_HOST_FRAGMENT;
+  const esFixtures = neon.endpointId === FIXTURES_HOST_FRAGMENT;
   if (esProduccion === esFixtures) return "unknown"; // ninguno (false/false) o ambos (true/true, imposible hoy pero no se asume)
   return esProduccion ? "production" : "fixtures";
 }
@@ -146,6 +156,43 @@ export function extraerUrlDeArgv(argv: string[]): string | null {
   const conIgual = argv.find((a) => a.startsWith("--url="));
   if (conIgual) return conIgual.slice("--url=".length);
   return null;
+}
+
+export const CLI_SECRET_REDACTION = "[REDACTED]";
+
+/** Sanitiza argumentos antes de loguearlos; nunca altera argv real ni el comando ejecutado. */
+export function sanitizarArgumentosCli(argv: string[]): string[] {
+  const sanitized: string[] = [];
+  for (let index = 0; index < argv.length; index++) {
+    const argument = argv[index];
+    if (argument === "--url") {
+      sanitized.push(argument);
+      if (index + 1 < argv.length) {
+        sanitized.push(CLI_SECRET_REDACTION);
+        index++;
+      }
+      continue;
+    }
+    if (argument.startsWith("--url=")) {
+      sanitized.push(`--url=${CLI_SECRET_REDACTION}`);
+      continue;
+    }
+    if (/^(?:postgres|postgresql):\/\//i.test(argument)) {
+      sanitized.push(CLI_SECRET_REDACTION);
+      continue;
+    }
+    const envAssignment = argument.match(/^(DIRECT_URL|DATABASE_URL_UNPOOLED|DATABASE_URL)=(.*)$/);
+    if (envAssignment) {
+      sanitized.push(`${envAssignment[1]}=${CLI_SECRET_REDACTION}`);
+      continue;
+    }
+    sanitized.push(argument);
+  }
+  return sanitized;
+}
+
+export function describirComandoPrismaSeguro(argv: string[]): string {
+  return sanitizarArgumentosCli(argv).join(" ");
 }
 
 // Subcomandos de la CLI de Prisma que pueden escribir schema o datos —
