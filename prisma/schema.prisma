@@ -194,6 +194,24 @@ enum PayerIdentitySignalType {
   OTHER
 }
 
+enum PayerUnitAssociationStatus {
+  OBSERVED
+  DISPUTED
+  REVOKED
+}
+
+enum PayerUnitEvidenceEffect {
+  SUPPORT
+  CONTRADICT
+  REVOKE
+}
+
+enum PayerUnitEvidenceSource {
+  PAYMENT_CONFIRMED
+  HUMAN_CONFIRMATION
+  SYSTEM_OBSERVATION
+}
+
 // Eventos opacos y append-only de protección de acceso piloto. No contienen
 // email, IP, token ni hashes reutilizables: subjectKey es un HMAC con dominio.
 enum PilotAccessRateLimitScope {
@@ -211,11 +229,12 @@ model Administrator {
   name  String
   email String @unique
 
-  organizations               OrganizationAdministrator[]
-  pilotAccessTokens           PilotAccessToken[]
-  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
-  payersCreated               Payer[]
-  payerIdentitySignalsCreated PayerIdentitySignal[]
+  organizations                  OrganizationAdministrator[]
+  pilotAccessTokens              PilotAccessToken[]
+  paymentEvidenceCorrelations    PaymentEvidenceCorrelation[]
+  payersCreated                  Payer[]
+  payerIdentitySignalsCreated    PayerIdentitySignal[]
+  payerUnitEvidenceEventsCreated PayerUnitEvidenceEvent[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -293,6 +312,8 @@ model Organization {
   paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
   payers                      Payer[]
   payerIdentitySignals        PayerIdentitySignal[]
+  payerUnitAssociations       PayerUnitAssociation[]
+  payerUnitEvidenceEvents     PayerUnitEvidenceEvent[]
   // Fase 4 Parte C — Compliance Foundation. Relaciones inversas obligatorias
   // de Prisma (sintaxis, no crean ninguna columna real en esta tabla) — ver
   // ProviderOrganization/ProviderDocument más abajo.
@@ -546,6 +567,7 @@ model Unit {
   paymentNotices                PaymentNotice[]
   shadowMatchLogs               ShadowMatchLog[]
   paymentEvidenceAssessmentLogs PaymentEvidenceAssessmentLog[]
+  payerUnitAssociations         PayerUnitAssociation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -664,9 +686,10 @@ model ReconciliationMatch {
   decidedBy       String? // null = sistema/automático — ver nota arriba sobre autenticación
   rejectionReason String? // solo cuando decision = REJECTED
 
-  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
-  unit               Unit?              @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  obligation         Obligation?        @relation(fields: [obligationId], references: [id], onDelete: SetNull)
+  paymentTransaction      PaymentTransaction       @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  unit                    Unit?                    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  obligation              Obligation?              @relation(fields: [obligationId], references: [id], onDelete: SetNull)
+  payerUnitEvidenceEvents PayerUnitEvidenceEvent[]
 
   createdAt DateTime @default(now()) // fecha/hora del evento — no hay updatedAt, la fila no se edita
 
@@ -940,6 +963,7 @@ model PaymentEvidenceCorrelation {
   decidedBy               String?
   administrator           Administrator?                @relation(fields: [decidedBy], references: [id], onDelete: SetNull)
   createdAt               DateTime                      @default(now())
+  payerUnitEvidenceEvents PayerUnitEvidenceEvent[]
 
   @@unique([paymentNoticeId, paymentTransactionId, status])
   @@index([organizationId])
@@ -954,18 +978,19 @@ model PaymentEvidenceCorrelation {
 // occupancy ni responsabilidad legal, y no necesita apuntar a UnitOwner.
 // La memoria N:M payer↔unit y sus eventos de aprendizaje pertenecen a 5.0D.
 model Payer {
-  id              String                @id @default(cuid())
-  organizationId  String
-  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  displayName     String?
-  status          PayerStatus           @default(ACTIVE)
-  source          PayerProvenanceSource
-  reason          String
-  createdBy       String?
-  administrator   Administrator?        @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  identitySignals PayerIdentitySignal[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id               String                 @id @default(cuid())
+  organizationId   String
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  displayName      String?
+  status           PayerStatus            @default(ACTIVE)
+  source           PayerProvenanceSource
+  reason           String
+  createdBy        String?
+  administrator    Administrator?         @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  identitySignals  PayerIdentitySignal[]
+  unitAssociations PayerUnitAssociation[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@index([organizationId, status])
   @@index([createdBy])
@@ -990,11 +1015,72 @@ model PayerIdentitySignal {
   createdBy             String?
   administrator         Administrator?          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
   createdAt             DateTime                @default(now())
+  unitAssociations      PayerUnitAssociation[]
 
   @@unique([organizationId, type, normalizedFingerprint])
   @@index([organizationId, payerId])
   @@index([createdBy])
   @@map("payer_identity_signals")
+}
+
+// Fase 5.0D — proyección consultable de memoria histórica, nunca ownership,
+// occupancy ni asignación automática. Exactamente uno de payerId/signalId se
+// exige mediante CHECK en la migración; índices parciales preservan N:M.
+model PayerUnitAssociation {
+  id                 String                     @id @default(cuid())
+  organizationId     String
+  organization       Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payerId            String?
+  payer              Payer?                     @relation(fields: [payerId], references: [id], onDelete: Restrict)
+  signalId           String?
+  signal             PayerIdentitySignal?       @relation(fields: [signalId], references: [id], onDelete: Restrict)
+  unitId             String
+  unit               Unit                       @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  status             PayerUnitAssociationStatus @default(OBSERVED)
+  observationCount   Int                        @default(0)
+  supportCount       Int                        @default(0)
+  contradictionCount Int                        @default(0)
+  firstSeenAt        DateTime
+  lastSeenAt         DateTime
+  events             PayerUnitEvidenceEvent[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@index([organizationId, unitId, status])
+  @@index([organizationId, payerId])
+  @@index([organizationId, signalId])
+  @@map("payer_unit_associations")
+}
+
+// Evento causal append-only. evidenceKey es un hash de la provenance lógica,
+// no PII ni timestamp; impide que reintentos inflen la proyección.
+model PayerUnitEvidenceEvent {
+  id                           String                      @id @default(cuid())
+  organizationId               String
+  organization                 Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  associationId                String
+  association                  PayerUnitAssociation        @relation(fields: [associationId], references: [id], onDelete: Restrict)
+  effect                       PayerUnitEvidenceEffect
+  source                       PayerUnitEvidenceSource
+  evidenceKey                  String
+  confidence                   Int?
+  paymentEvidenceCorrelationId String?
+  paymentEvidenceCorrelation   PaymentEvidenceCorrelation? @relation(fields: [paymentEvidenceCorrelationId], references: [id], onDelete: Restrict)
+  reconciliationMatchId        String?
+  reconciliationMatch          ReconciliationMatch?        @relation(fields: [reconciliationMatchId], references: [id], onDelete: Restrict)
+  reason                       String
+  observedAt                   DateTime
+  createdBy                    String?
+  administrator                Administrator?              @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt                    DateTime                    @default(now())
+
+  @@unique([organizationId, evidenceKey])
+  @@index([associationId, createdAt])
+  @@index([organizationId, source])
+  @@index([paymentEvidenceCorrelationId])
+  @@index([reconciliationMatchId])
+  @@index([createdBy])
+  @@map("payer_unit_evidence_events")
 }
 
 // ============================================================================
