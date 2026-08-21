@@ -160,6 +160,17 @@ enum PaymentEvidenceState {
   RECONCILIATION_CONFIRMED
 }
 
+enum PaymentEvidenceCorrelationStatus {
+  PROPOSED
+  CONFIRMED
+  REJECTED
+}
+
+enum PaymentEvidenceCorrelationSource {
+  SYSTEM_EVIDENCE
+  HUMAN_REVIEW
+}
+
 // Eventos opacos y append-only de protección de acceso piloto. No contienen
 // email, IP, token ni hashes reutilizables: subjectKey es un HMAC con dominio.
 enum PilotAccessRateLimitScope {
@@ -177,8 +188,9 @@ model Administrator {
   name  String
   email String @unique
 
-  organizations OrganizationAdministrator[]
-  pilotAccessTokens PilotAccessToken[]
+  organizations               OrganizationAdministrator[]
+  pilotAccessTokens           PilotAccessToken[]
+  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -189,14 +201,15 @@ model Administrator {
 }
 
 model PilotAccessToken {
-  id              String @id @default(cuid())
+  id              String        @id @default(cuid())
   administratorId String
-  tokenHash       String @unique
+  tokenHash       String        @unique
   expiresAt       DateTime
   usedAt          DateTime?
   revokedAt       DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime      @default(now())
   administrator   Administrator @relation(fields: [administratorId], references: [id], onDelete: Cascade)
+
   @@index([administratorId])
   @@index([expiresAt])
   @@map("pilot_access_tokens")
@@ -244,20 +257,21 @@ model Organization {
   address String
   status  OrganizationStatus @default(ACTIVE)
 
-  administrators        OrganizationAdministrator[]
-  contacts              ContactOrganization[]
-  channels              ContactChannel[]
-  billingProfiles       BillingProfile[]
-  paymentTransactions   PaymentTransaction[]
-  paymentReminders      PaymentReminder[]
-  units                 Unit[]
-  paymentNotices        PaymentNotice[]
+  administrators              OrganizationAdministrator[]
+  contacts                    ContactOrganization[]
+  channels                    ContactChannel[]
+  billingProfiles             BillingProfile[]
+  paymentTransactions         PaymentTransaction[]
+  paymentReminders            PaymentReminder[]
+  units                       Unit[]
+  paymentNotices              PaymentNotice[]
+  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
   // Fase 4 Parte C — Compliance Foundation. Relaciones inversas obligatorias
   // de Prisma (sintaxis, no crean ninguna columna real en esta tabla) — ver
   // ProviderOrganization/ProviderDocument más abajo.
-  providerOrganizations ProviderOrganization[]
-  providerDocuments     ProviderDocument[]
-  agentObservations     AgentObservation[]
+  providerOrganizations       ProviderOrganization[]
+  providerDocuments           ProviderDocument[]
+  agentObservations           AgentObservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -433,14 +447,15 @@ model PaymentTransaction {
 
   rawPayload Json // payload crudo tal como llegó — para auditoría y debugging
 
-  reconciliationMatches ReconciliationMatch[]
-  paymentNotices        PaymentNotice[]
-  shadowMatchLogs       ShadowMatchLog[]
+  reconciliationMatches         ReconciliationMatch[]
+  paymentNotices                PaymentNotice[]
+  shadowMatchLogs               ShadowMatchLog[]
   paymentEvidenceAssessmentLogs PaymentEvidenceAssessmentLog[]
+  paymentEvidenceCorrelations   PaymentEvidenceCorrelation[]
   // Fase 4.F — relación inversa obligatoria de Prisma (sintaxis, cero
   // columna real nueva acá). Ver AgentObservation.paymentTransactionId más
   // abajo — la columna real vive en AgentObservation, no acá.
-  agentObservations     AgentObservation[]
+  agentObservations             AgentObservation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -496,13 +511,13 @@ model Unit {
   code        String // ej. "3A" — identificador humano de la unidad
   coefficient Decimal? @db.Decimal(6, 4) // % de participación — opcional, no bloquea el matching, se completa después
 
-  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  owners              UnitOwner[]
-  obligations         Obligation[]
-  matches             ReconciliationMatch[]
-  paymentTransactions PaymentTransaction[]
-  paymentNotices      PaymentNotice[]
-  shadowMatchLogs     ShadowMatchLog[]
+  organization                  Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owners                        UnitOwner[]
+  obligations                   Obligation[]
+  matches                       ReconciliationMatch[]
+  paymentTransactions           PaymentTransaction[]
+  paymentNotices                PaymentNotice[]
+  shadowMatchLogs               ShadowMatchLog[]
   paymentEvidenceAssessmentLogs PaymentEvidenceAssessmentLog[]
 
   createdAt DateTime  @default(now())
@@ -675,6 +690,8 @@ model PaymentNotice {
   linkedUnitOwner            UnitOwner?          @relation(fields: [linkedUnitOwnerId], references: [id], onDelete: SetNull)
 
   confidence Int? // 0-99, mismo rango que ReconciliationMatch.score — null hasta que se calcule (fase futura)
+
+  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -861,13 +878,49 @@ model PaymentEvidenceAssessmentLog {
   // eliminarla para que esta migración sea estrictamente aditiva (ningún
   // DROP de columna con datos reales) — no aporta información nueva, no se
   // usa para nada.
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime @updatedAt
+
+  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
 
   @@index([paymentTransactionId, engineVersion])
   @@index([paymentTransactionId])
   @@index([state])
   @@index([candidateUnitId])
   @@map("payment_evidence_assessment_logs")
+}
+
+// Fase 5.0B — historial durable y append-only de candidatos y decisiones que
+// correlacionan un aviso con un movimiento bancario real. Una fila no confirma
+// por sí sola que el dinero se movió: PaymentTransaction conserva esa autoridad.
+// linkedPaymentTransactionId en PaymentNotice es solamente la proyección de la
+// única decisión CONFIRMED y se escribe atómicamente con ese evento.
+model PaymentEvidenceCorrelation {
+  id                   String                           @id @default(cuid())
+  organizationId       String
+  organization         Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentNoticeId      String
+  paymentNotice        PaymentNotice                    @relation(fields: [paymentNoticeId], references: [id], onDelete: Cascade)
+  paymentTransactionId String
+  paymentTransaction   PaymentTransaction               @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  status               PaymentEvidenceCorrelationStatus
+  source               PaymentEvidenceCorrelationSource
+
+  // Snapshot del score ya calculado por evidence-score; nunca se recalcula acá.
+  confidence              Int?
+  evidenceAssessmentLogId String?
+  evidenceAssessmentLog   PaymentEvidenceAssessmentLog? @relation(fields: [evidenceAssessmentLogId], references: [id], onDelete: SetNull)
+  reason                  String
+  decidedBy               String?
+  administrator           Administrator?                @relation(fields: [decidedBy], references: [id], onDelete: SetNull)
+  createdAt               DateTime                      @default(now())
+
+  @@unique([paymentNoticeId, paymentTransactionId, status])
+  @@index([organizationId])
+  @@index([paymentTransactionId])
+  @@index([paymentNoticeId, status])
+  @@index([evidenceAssessmentLogId])
+  @@index([decidedBy])
+  @@map("payment_evidence_correlations")
 }
 
 // ============================================================================
@@ -972,8 +1025,8 @@ model Provider {
   taxId     String? // CUIT — nullable (puede cargarse el proveedor antes de tener el dato), único cuando está presente
   matricula String?
 
-  organizations ProviderOrganization[]
-  documents     ProviderDocument[]
+  organizations     ProviderOrganization[]
+  documents         ProviderDocument[]
   // Fase 4 Parte D — relación inversa obligatoria de Prisma (sintaxis, cero
   // columna real nueva acá). Ver AgentObservation más abajo.
   agentObservations AgentObservation[]
@@ -1156,11 +1209,11 @@ model AgentObservation {
   agentType AgentType
   type      AgentObservationType
   severity  AgentObservationSeverity
-  status    AgentObservationStatus @default(OPEN)
+  status    AgentObservationStatus   @default(OPEN)
 
-  providerId         String?
-  providerDocumentId String?
-  organizationId     String?
+  providerId           String?
+  providerDocumentId   String?
+  organizationId       String?
   // Fase 4.F — FK explícita nullable hacia el pago que originó la
   // observación (agentType=MATCHING). Mismo criterio que providerId/
   // providerDocumentId: nunca entityType/entityId polimórfico. Null para
