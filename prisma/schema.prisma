@@ -192,6 +192,43 @@ enum PaymentEvidenceIntakeState {
   RECEIVED
 }
 
+enum PaymentEvidenceExtractionSource {
+  STRUCTURED
+  TEXT
+  EXTERNAL_EXTRACTOR
+}
+
+enum PaymentEvidenceExtractionStatus {
+  SUCCEEDED
+  FAILED
+  UNSUPPORTED
+}
+
+enum PaymentEvidenceFactType {
+  AMOUNT
+  DATE
+  OPERATION_REFERENCE
+  BANK_NAME
+  PAYER_DISPLAY_NAME
+  ACCOUNT_IDENTIFIER
+  TRANSFER_REFERENCE
+}
+
+enum PaymentEvidenceDateRole {
+  OPERATION
+  ISSUED
+  ACCREDITATION
+  UNKNOWN
+}
+
+enum PaymentEvidenceAccountType {
+  CBU
+  CVU
+  ALIAS
+  ACCOUNT
+  OTHER
+}
+
 enum PayerStatus {
   ACTIVE
   REVOKED
@@ -257,6 +294,7 @@ model Administrator {
   payerIdentitySignalsCreated    PayerIdentitySignal[]
   payerUnitEvidenceEventsCreated PayerUnitEvidenceEvent[]
   paymentEvidenceIntakesReceived PaymentEvidenceIntake[]
+  paymentEvidenceExtractionRuns  PaymentEvidenceExtractionRun[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -323,26 +361,28 @@ model Organization {
   address String
   status  OrganizationStatus @default(ACTIVE)
 
-  administrators              OrganizationAdministrator[]
-  contacts                    ContactOrganization[]
-  channels                    ContactChannel[]
-  billingProfiles             BillingProfile[]
-  paymentTransactions         PaymentTransaction[]
-  paymentReminders            PaymentReminder[]
-  units                       Unit[]
-  paymentNotices              PaymentNotice[]
-  paymentEvidenceCorrelations PaymentEvidenceCorrelation[]
-  paymentEvidenceIntakes      PaymentEvidenceIntake[]
-  payers                      Payer[]
-  payerIdentitySignals        PayerIdentitySignal[]
-  payerUnitAssociations       PayerUnitAssociation[]
-  payerUnitEvidenceEvents     PayerUnitEvidenceEvent[]
+  administrators                OrganizationAdministrator[]
+  contacts                      ContactOrganization[]
+  channels                      ContactChannel[]
+  billingProfiles               BillingProfile[]
+  paymentTransactions           PaymentTransaction[]
+  paymentReminders              PaymentReminder[]
+  units                         Unit[]
+  paymentNotices                PaymentNotice[]
+  paymentEvidenceCorrelations   PaymentEvidenceCorrelation[]
+  paymentEvidenceIntakes        PaymentEvidenceIntake[]
+  paymentEvidenceExtractionRuns PaymentEvidenceExtractionRun[]
+  paymentEvidenceFacts          PaymentEvidenceFact[]
+  payers                        Payer[]
+  payerIdentitySignals          PayerIdentitySignal[]
+  payerUnitAssociations         PayerUnitAssociation[]
+  payerUnitEvidenceEvents       PayerUnitEvidenceEvent[]
   // Fase 4 Parte C — Compliance Foundation. Relaciones inversas obligatorias
   // de Prisma (sintaxis, no crean ninguna columna real en esta tabla) — ver
   // ProviderOrganization/ProviderDocument más abajo.
-  providerOrganizations       ProviderOrganization[]
-  providerDocuments           ProviderDocument[]
-  agentObservations           AgentObservation[]
+  providerOrganizations         ProviderOrganization[]
+  providerDocuments             ProviderDocument[]
+  agentObservations             AgentObservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -781,24 +821,76 @@ model PaymentNotice {
 // Original provenance is append-only: there is intentionally no updatedAt and
 // this phase exposes create/read only. Binary/raw/OCR content never lives here.
 model PaymentEvidenceIntake {
-  id                     String                      @id @default(cuid())
+  id                     String                         @id @default(cuid())
   organizationId         String
-  organization           Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization           Organization                   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   source                 PaymentEvidenceIntakeSource
   evidenceType           PaymentEvidenceIntakeType
-  state                  PaymentEvidenceIntakeState  @default(RECEIVED)
+  state                  PaymentEvidenceIntakeState     @default(RECEIVED)
   externalReference      String?
   storageReference       String?
   declaredMimeType       String?
   receivedAt             DateTime
   receivedBy             String?
-  receivingAdministrator Administrator?              @relation(fields: [receivedBy], references: [id], onDelete: Restrict)
-  createdAt              DateTime                    @default(now())
+  receivingAdministrator Administrator?                 @relation(fields: [receivedBy], references: [id], onDelete: Restrict)
+  createdAt              DateTime                       @default(now())
+  extractionRuns         PaymentEvidenceExtractionRun[]
 
   @@unique([organizationId, source, externalReference])
   @@index([organizationId, state, receivedAt])
   @@index([receivedBy])
   @@map("payment_evidence_intakes")
+}
+
+// One immutable attempt to extract facts from an intake. A failed or
+// unsupported run never changes or invalidates the original intake.
+model PaymentEvidenceExtractionRun {
+  id               String                          @id @default(cuid())
+  organizationId   String
+  organization     Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  intakeId         String
+  intake           PaymentEvidenceIntake           @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  source           PaymentEvidenceExtractionSource
+  extractor        String
+  extractorVersion String
+  status           PaymentEvidenceExtractionStatus
+  errorCode        String?
+  extractedAt      DateTime
+  createdBy        String
+  administrator    Administrator                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt        DateTime                        @default(now())
+  facts            PaymentEvidenceFact[]
+
+  @@index([organizationId, intakeId, extractedAt])
+  @@index([intakeId, status])
+  @@index([createdBy])
+  @@map("payment_evidence_extraction_runs")
+}
+
+// Normalized observations only. Raw fragments and complete sensitive account
+// identifiers are deliberately absent from durable storage.
+model PaymentEvidenceFact {
+  id                    String                       @id @default(cuid())
+  organizationId        String
+  organization          Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  extractionRunId       String
+  extractionRun         PaymentEvidenceExtractionRun @relation(fields: [extractionRunId], references: [id], onDelete: Restrict)
+  type                  PaymentEvidenceFactType
+  normalizedValue       String?
+  numericValue          Decimal?                     @db.Decimal(14, 2)
+  dateValue             DateTime?
+  currency              String?
+  dateRole              PaymentEvidenceDateRole?
+  accountType           PaymentEvidenceAccountType?
+  normalizedFingerprint String?
+  maskedValue           String?
+  confidence            Float?
+  createdAt             DateTime                     @default(now())
+
+  @@index([organizationId, type])
+  @@index([extractionRunId])
+  @@index([organizationId, normalizedFingerprint])
+  @@map("payment_evidence_facts")
 }
 
 // ----------------------------------------------------------------------------

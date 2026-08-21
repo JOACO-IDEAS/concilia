@@ -52,20 +52,6 @@ export type RegisterPaymentEvidenceResult = {
   idempotency: "EXTERNAL_REFERENCE" | "NONE";
 };
 
-/** Output boundary for 5.2B. Facts are extracted observations, never unit/payer inferences. */
-export type PaymentEvidenceExtractionResult = {
-  intakeId: string;
-  organizationId: string;
-  facts: {
-    amount?: number;
-    currency?: string;
-    occurredAt?: Date;
-    payerLabel?: string;
-    operationReference?: string;
-    bankLabel?: string;
-  };
-};
-
 function optionalText(value: string | null | undefined, max: number) {
   if (value == null) return null;
   const normalized = value.normalize("NFKC").trim();
