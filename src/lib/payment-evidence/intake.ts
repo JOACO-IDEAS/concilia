@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import type { PaymentEvidenceIntakeSource, PaymentEvidenceIntakeType } from "@/generated/prisma/enums";
 
 const SAFE_DENIAL = "Recurso no disponible.";
@@ -80,8 +81,63 @@ function validate(input: RegisterPaymentEvidenceInput) {
   return { externalReference, storageReference, declaredMimeType };
 }
 
+type TrustedTransportInput = Omit<RegisterPaymentEvidenceInput, "administratorId" | "organizationId">;
+type TransactionClient = Prisma.TransactionClient;
+
+function validateTrusted(input: TrustedTransportInput) {
+  return validate({ ...input, administratorId: "trusted-transport", organizationId: "resolved-tenant" });
+}
+
 function present(row: IntakeRow, status: RegisterPaymentEvidenceResult["status"], idempotency: RegisterPaymentEvidenceResult["idempotency"]): RegisterPaymentEvidenceResult {
   return { status, idempotency, intake: { id: row.id, organizationId: row.organizationId, source: row.source, evidenceType: row.evidenceType, state: row.state, receivedAt: row.receivedAt } };
+}
+
+async function persistIntake(
+  tx: TransactionClient,
+  input: TrustedTransportInput,
+  organizationId: string,
+  receivedBy: string | null,
+  normalized: ReturnType<typeof validateTrusted>,
+) {
+  if (normalized.externalReference) {
+    const existing = await tx.paymentEvidenceIntake.findUnique({
+      where: { organizationId_source_externalReference: { organizationId, source: input.source, externalReference: normalized.externalReference } },
+    });
+    if (existing) return present(existing, "ALREADY_RECEIVED", "EXTERNAL_REFERENCE");
+  }
+  try {
+    const created = await tx.paymentEvidenceIntake.create({ data: {
+      organizationId,
+      source: input.source,
+      evidenceType: input.evidenceType,
+      externalReference: normalized.externalReference,
+      storageReference: normalized.storageReference,
+      declaredMimeType: normalized.declaredMimeType,
+      receivedAt: input.receivedAt,
+      receivedBy,
+    } });
+    return present(created, "CREATED", normalized.externalReference ? "EXTERNAL_REFERENCE" : "NONE");
+  } catch (error) {
+    if (!normalized.externalReference || typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") throw error;
+    const existing = await tx.paymentEvidenceIntake.findUnique({
+      where: { organizationId_source_externalReference: { organizationId, source: input.source, externalReference: normalized.externalReference } },
+    });
+    if (!existing) throw error;
+    return present(existing, "ALREADY_RECEIVED", "EXTERNAL_REFERENCE");
+  }
+}
+
+/** Internal transport boundary. Tenant resolution executes inside the same transaction and must fail closed. */
+export async function registerPaymentEvidenceFromTrustedTransport(
+  input: TrustedTransportInput,
+  resolveTenant: (tx: TransactionClient) => Promise<{ organizationId: string } | null>,
+): Promise<RegisterPaymentEvidenceResult> {
+  const normalized = validateTrusted(input);
+  return prisma.$transaction(async (tx) => {
+    const tenant = await resolveTenant(tx);
+    if (!tenant) throw new PaymentEvidenceIntakeAccessError();
+    return persistIntake(tx, input, tenant.organizationId, null, normalized);
+  });
 }
 
 /** Register receipt only. It performs no extraction, matching, correlation, learning or reconciliation. */
@@ -94,32 +150,6 @@ export async function registerPaymentEvidence(input: RegisterPaymentEvidenceInpu
     });
     if (!membership || membership.administrator.deletedAt || membership.organization.deletedAt || membership.organization.status !== "ACTIVE") throw new PaymentEvidenceIntakeAccessError();
 
-    if (normalized.externalReference) {
-      const existing = await tx.paymentEvidenceIntake.findUnique({
-        where: { organizationId_source_externalReference: { organizationId: input.organizationId, source: input.source, externalReference: normalized.externalReference } },
-      });
-      if (existing) return present(existing, "ALREADY_RECEIVED", "EXTERNAL_REFERENCE");
-    }
-
-    try {
-      const created = await tx.paymentEvidenceIntake.create({ data: {
-        organizationId: input.organizationId,
-        source: input.source,
-        evidenceType: input.evidenceType,
-        externalReference: normalized.externalReference,
-        storageReference: normalized.storageReference,
-        declaredMimeType: normalized.declaredMimeType,
-        receivedAt: input.receivedAt,
-        receivedBy: input.administratorId,
-      } });
-      return present(created, "CREATED", normalized.externalReference ? "EXTERNAL_REFERENCE" : "NONE");
-    } catch (error) {
-      if (!normalized.externalReference || typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") throw error;
-      const existing = await tx.paymentEvidenceIntake.findUnique({
-        where: { organizationId_source_externalReference: { organizationId: input.organizationId, source: input.source, externalReference: normalized.externalReference } },
-      });
-      if (!existing) throw error;
-      return present(existing, "ALREADY_RECEIVED", "EXTERNAL_REFERENCE");
-    }
+    return persistIntake(tx, input, input.organizationId, input.administratorId, normalized);
   });
 }

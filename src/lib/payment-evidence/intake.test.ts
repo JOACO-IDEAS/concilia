@@ -13,6 +13,7 @@ import {
   PaymentEvidenceIntakeAccessError,
   PaymentEvidenceIntakeValidationError,
   registerPaymentEvidence,
+  registerPaymentEvidenceFromTrustedTransport,
   type RegisterPaymentEvidenceInput,
 } from "./intake";
 
@@ -129,5 +130,21 @@ describe("registerPaymentEvidence", () => {
     expect(mocks.membership).toHaveBeenCalledTimes(1);
     expect(mocks.findUnique).toHaveBeenCalledTimes(1);
     expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers a trusted transport receipt without attributing it to an administrator", async () => {
+    const result = await registerPaymentEvidenceFromTrustedTransport({
+      source: "WHATSAPP", evidenceType: "TEXT", receivedAt: now, externalReference: "wa-message-1",
+    }, async () => ({ organizationId: "org-a" }));
+    expect(result.status).toBe("CREATED");
+    expect(mocks.membership).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls[0][0].data).toMatchObject({ organizationId: "org-a", source: "WHATSAPP", receivedBy: null });
+  });
+
+  it("trusted transports fail closed when tenant resolution fails", async () => {
+    await expect(registerPaymentEvidenceFromTrustedTransport({
+      source: "WHATSAPP", evidenceType: "TEXT", receivedAt: now, externalReference: "wa-message-1",
+    }, async () => null)).rejects.toBeInstanceOf(PaymentEvidenceIntakeAccessError);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });

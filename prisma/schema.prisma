@@ -229,6 +229,15 @@ enum PaymentEvidenceAccountType {
   OTHER
 }
 
+enum WhatsAppProvider {
+  META_CLOUD
+}
+
+enum WhatsAppChannelConnectionStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum PayerStatus {
   ACTIVE
   REVOKED
@@ -287,14 +296,15 @@ model Administrator {
   name  String
   email String @unique
 
-  organizations                  OrganizationAdministrator[]
-  pilotAccessTokens              PilotAccessToken[]
-  paymentEvidenceCorrelations    PaymentEvidenceCorrelation[]
-  payersCreated                  Payer[]
-  payerIdentitySignalsCreated    PayerIdentitySignal[]
-  payerUnitEvidenceEventsCreated PayerUnitEvidenceEvent[]
-  paymentEvidenceIntakesReceived PaymentEvidenceIntake[]
-  paymentEvidenceExtractionRuns  PaymentEvidenceExtractionRun[]
+  organizations                     OrganizationAdministrator[]
+  pilotAccessTokens                 PilotAccessToken[]
+  paymentEvidenceCorrelations       PaymentEvidenceCorrelation[]
+  payersCreated                     Payer[]
+  payerIdentitySignalsCreated       PayerIdentitySignal[]
+  payerUnitEvidenceEventsCreated    PayerUnitEvidenceEvent[]
+  paymentEvidenceIntakesReceived    PaymentEvidenceIntake[]
+  paymentEvidenceExtractionRuns     PaymentEvidenceExtractionRun[]
+  whatsAppChannelConnectionsCreated WhatsAppChannelConnection[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -373,6 +383,7 @@ model Organization {
   paymentEvidenceIntakes        PaymentEvidenceIntake[]
   paymentEvidenceExtractionRuns PaymentEvidenceExtractionRun[]
   paymentEvidenceFacts          PaymentEvidenceFact[]
+  whatsAppChannelConnections    WhatsAppChannelConnection[]
   payers                        Payer[]
   payerIdentitySignals          PayerIdentitySignal[]
   payerUnitAssociations         PayerUnitAssociation[]
@@ -892,6 +903,26 @@ model PaymentEvidenceFact {
   @@index([extractionRunId])
   @@index([organizationId, normalizedFingerprint])
   @@map("payment_evidence_facts")
+}
+
+// Tenant mapping for inbound WhatsApp business channels. Provider secrets and
+// sender/customer phone numbers deliberately do not belong in this table.
+model WhatsAppChannelConnection {
+  id                       String                          @id @default(cuid())
+  organizationId           String
+  organization             Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  provider                 WhatsAppProvider
+  externalChannelReference String
+  status                   WhatsAppChannelConnectionStatus @default(ACTIVE)
+  createdBy                String
+  administrator            Administrator                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt                DateTime                        @default(now())
+  updatedAt                DateTime                        @updatedAt
+
+  @@unique([provider, externalChannelReference])
+  @@index([organizationId, status])
+  @@index([createdBy])
+  @@map("whatsapp_channel_connections")
 }
 
 // ----------------------------------------------------------------------------
