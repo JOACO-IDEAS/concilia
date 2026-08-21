@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { executeAgentCapability, type AgentResponse } from "./executor";
 import { resolveAgentIntent } from "./intent";
 import { loadTodayAttention } from "./today-attention-tool";
+import { loadReconciliationReview } from "./reconciliation-review-tool";
+import { loadDebtOverview } from "./debt-overview-tool";
+import { loadReconciliationLookup } from "./reconciliation-lookup-tool";
+import { loadOrganizationLookup } from "./organization-lookup-tool";
 import { AGENT_MESSAGE_MAX_LENGTH, AGENT_TITLE_MAX_LENGTH } from "./contracts";
 
 const SAFE_ERROR = "No pude completar esta consulta.";
@@ -93,12 +97,18 @@ export async function getAgentConversation(administratorId: string, conversation
 }
 
 async function responseFor(message: string, tx: Prisma.TransactionClient, administratorId: string, organizationId: string): Promise<AgentResponse> {
-  const capability = resolveAgentIntent(message);
-  if (!capability) return { message: UNAVAILABLE, capability: null };
+  const intent = resolveAgentIntent(message);
+  if (!intent) return { message: UNAVAILABLE, capability: null };
   try {
-    return await executeAgentCapability(capability, { todayAttention: () => loadTodayAttention(tx, administratorId, organizationId) });
+    return await executeAgentCapability(intent.capability, intent.input, {
+      todayAttention: () => loadTodayAttention(tx, administratorId, organizationId),
+      reconciliationReview: () => loadReconciliationReview(tx, administratorId, organizationId),
+      debtOverview: () => loadDebtOverview(tx, administratorId),
+      reconciliationLookup: (input) => loadReconciliationLookup(tx, administratorId, organizationId, input),
+      organizationLookup: (query) => loadOrganizationLookup(tx, administratorId, query),
+    });
   } catch {
-    return { message: SAFE_ERROR, capability };
+    return { message: SAFE_ERROR, capability: intent.capability };
   }
 }
 

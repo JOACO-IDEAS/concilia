@@ -10,9 +10,19 @@ describe("ConcilIA Agent route and UX contract", () => {
     expect(page).toContain('redirect("/acceso")');
   });
 
-  it("has truthful empty state suggestions for the one real capability", () => {
+  it("has truthful empty state suggestions for real capabilities", () => {
     expect(workspace).toContain("¿Qué necesitás resolver?");
-    expect(workspace).not.toMatch(/Buscá un comprobante|mayor deuda|documentos/i);
+    expect(workspace).toContain("¿Qué pagos necesitan revisión?");
+    expect(workspace).toContain("¿Dónde tengo mayor mora?");
+    expect(workspace).not.toMatch(/documentos|factura/i);
+  });
+
+  it("renders bounded structured cards with safe product links", () => {
+    expect(workspace).toContain("AgentStructuredResult");
+    expect(workspace).toContain("Revisar caso");
+    expect(workspace).toContain("Ver movimiento");
+    expect(workspace).toContain("Ver consorcio");
+    expect(workspace).not.toMatch(/payerIdentifier|bankAccount|phone|email|fingerprint/);
   });
 
   it("supports accessible keyboard composer behavior and safe limits", () => {

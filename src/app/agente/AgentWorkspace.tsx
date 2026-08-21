@@ -1,18 +1,20 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
-import { ArrowUp, MessageSquarePlus } from "lucide-react";
+import { ArrowUp, ExternalLink, MessageSquarePlus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { AgentConversationDTO } from "@/lib/agent/conversations";
 import { AGENT_MESSAGE_MAX_LENGTH } from "@/lib/agent/contracts";
+import type { AgentPresentation } from "@/lib/agent/executor";
 import { createAgentConversationAction, sendAgentMessageAction } from "./actions";
 
 const SUGGESTIONS = [
   "¿Qué requiere mi atención hoy?",
-  "¿Qué necesita mi atención hoy?",
-  "¿Qué tengo pendiente?",
-  "¿Qué tengo que revisar?",
+  "¿Qué pagos necesitan revisión?",
+  "¿Dónde tengo mayor mora?",
+  "¿Qué pasó con el pago de $210.000?",
 ] as const;
 
 export function AgentWorkspace({
@@ -30,6 +32,7 @@ export function AgentWorkspace({
   const [organizationId, setOrganizationId] = useState(initialActive?.organizationId ?? organizations[0]?.id ?? "");
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [presentation, setPresentation] = useState<AgentPresentation | null>(null);
   const [pending, startTransition] = useTransition();
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const activeId = active?.id ?? "";
@@ -68,6 +71,7 @@ export function AgentWorkspace({
       const result = await sendAgentMessageAction(conversation.id, message);
       if (!result.ok) { setError(result.error); return; }
       setContent("");
+      setPresentation(result.response.presentation ?? null);
       replaceConversation(result.conversation);
       router.replace(`/agente?conversation=${result.conversation.id}`);
     });
@@ -137,6 +141,7 @@ export function AgentWorkspace({
               </article>
             ))}
             {pending ? <p className="text-sm text-slate-500" role="status">Consultando ConcilIA...</p> : null}
+            {presentation ? <AgentStructuredResult presentation={presentation} /> : null}
           </div>
         </div>
 
@@ -153,4 +158,16 @@ export function AgentWorkspace({
       </section>
     </div>
   );
+}
+
+function ResultLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return <Link href={href} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-slate-800">{children}<ExternalLink size={14} aria-hidden="true" /></Link>;
+}
+
+function AgentStructuredResult({ presentation }: { presentation: AgentPresentation }) {
+  if (presentation.kind === "ATTENTION_SUMMARY") return null;
+  if (presentation.kind === "RECONCILIATION_REVIEW") return <div className="grid gap-3 sm:grid-cols-2">{presentation.cases.map((item) => <article key={item.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="font-semibold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.organizationName} · {item.amountLabel}</p><p className="mt-2 line-clamp-3 text-sm text-slate-500">{item.reason}</p><ResultLink href={item.href}>Revisar caso</ResultLink></article>)}</div>;
+  if (presentation.kind === "DEBT_OVERVIEW") return <ol className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">{presentation.results.map((item, index) => <li key={item.organizationId} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-slate-100 p-4 last:border-0 dark:border-slate-800"><span className="text-sm font-semibold text-slate-400">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate font-semibold">{item.organizationName}</p><p className="text-sm text-slate-500">{item.outstandingLabel} · {item.overdueUnits} unidades con saldo</p></div><ResultLink href={item.href}>Ver consorcio</ResultLink></li>)}</ol>;
+  if (presentation.kind === "RECONCILIATION_LOOKUP") return <div className="grid gap-3 sm:grid-cols-2">{presentation.matches.map((item) => <article key={item.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="font-semibold">{item.amountLabel}</p><p className="truncate text-sm text-slate-600 dark:text-slate-300">{item.organizationName}</p><p className="mt-1 text-xs text-slate-500">{item.dateLabel} · {item.referenceLabel} · {item.status}</p><ResultLink href={item.href}>Ver movimiento</ResultLink></article>)}</div>;
+  return <div className="grid gap-3 sm:grid-cols-2">{presentation.organizations.map((item) => <article key={item.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p className="truncate font-semibold">{item.name}</p><p className="truncate text-sm text-slate-500">{item.address}</p><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{item.unitCount} unidades · {item.paymentCount} movimientos</p><ResultLink href={item.href}>Ver consorcio</ResultLink></article>)}</div>;
 }

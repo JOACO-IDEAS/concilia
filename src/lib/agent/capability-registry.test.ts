@@ -6,21 +6,35 @@ import { resolveAgentIntent } from "./intent";
 
 describe("ConcilIA Agent capability boundary", () => {
   it.each(["¿Qué requiere mi atención hoy?", "qué tengo pendiente", "¿Qué tengo que revisar?"])("resolves the supported deterministic intent: %s", (input) => {
-    expect(resolveAgentIntent(input)).toBe("TODAY_ATTENTION");
+    expect(resolveAgentIntent(input)).toMatchObject({ capability: "TODAY_ATTENTION" });
   });
 
   it("does not pretend to understand unsupported intents", () => expect(resolveAgentIntent("Buscá un comprobante")).toBeNull());
 
   it("is an explicit allowlist and every current capability is read-only", () => {
-    expect(AGENT_CAPABILITIES).toHaveLength(1);
+    expect(AGENT_CAPABILITIES).toHaveLength(5);
+    expect(AGENT_CAPABILITIES.every((item) => item.nature === "READ_ONLY" && item.requiresConfirmation === false && item.inputSchema && item.outputSchema)).toBe(true);
     expect(getAgentCapability("TODAY_ATTENTION")).toMatchObject({ availability: "AVAILABLE", nature: "READ_ONLY", requiresConfirmation: false });
     expect(getAgentCapability("ARBITRARY_CODE")).toBeNull();
   });
 
   it("executes only the bounded tool context and returns runtime-only presentation", async () => {
     const todayAttention = vi.fn().mockResolvedValue({ message: "Todo al día.", needsDecision: { status: "available", value: 0, capped: false }, needsInformation: { status: "available", value: 0, capped: false } });
-    await expect(executeAgentCapability("TODAY_ATTENTION", { todayAttention })).resolves.toMatchObject({ capability: "TODAY_ATTENTION", presentation: { kind: "ATTENTION_SUMMARY" } });
+    const unused = vi.fn();
+    await expect(executeAgentCapability("TODAY_ATTENTION", {}, { todayAttention, reconciliationReview: unused, debtOverview: unused, reconciliationLookup: unused, organizationLookup: unused })).resolves.toMatchObject({ capability: "TODAY_ATTENTION", presentation: { kind: "ATTENTION_SUMMARY" } });
     expect(todayAttention).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["¿Qué pagos necesitan revisión?", "RECONCILIATION_REVIEW"],
+    ["¿Dónde tengo mayor mora?", "DEBT_OVERVIEW"],
+    ["¿Qué pasó con el pago de $210.000?", "RECONCILIATION_LOOKUP"],
+    ["Mostrame Santa Fe 1842", "ORGANIZATION_LOOKUP"],
+  ])("maps %s conservatively", (message, capability) => expect(resolveAgentIntent(message)).toMatchObject({ capability }));
+
+  it("keeps ambiguous and document intents unsupported", () => {
+    expect(resolveAgentIntent("mostrame el documento de agosto")).toBeNull();
+    expect(resolveAgentIntent("pago")).toBeNull();
   });
 
   it("registry and executor have no Prisma or external model access", () => {
