@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireCurrentAdministrator } from "@/lib/auth/session";
+import type { ReconciliationIntelligenceViewModel } from "@/lib/payer-identity/reconciliation-intelligence-view-model";
 
 type Candidate = { unitCode: string; matchedSignals: string[] };
 
@@ -20,6 +21,8 @@ export type ResolutionWorkspaceData = {
     organizationName: string;
   };
   proposal: null | { kind: "SINGLE" | "AMBIGUOUS"; unitId: string | null; unitCode: string | null; explanation: string; evidence: string[]; candidates: Candidate[] };
+  /** Presentation contract ready for 5.0G. Null until historical resolution has real persistence/data-access wiring. */
+  intelligence: ReconciliationIntelligenceViewModel | null;
   resolved: boolean;
   history: { id: string; kind: "RECEIVED" | "PROPOSED" | "APPROVED" | "REJECTED"; title: string; detail: string; createdAt: string }[];
 };
@@ -83,6 +86,7 @@ export async function getResolutionWorkspaceData(paymentTransactionId: string): 
   return {
     payment: { ...payment, amount: payment.amount.toNumber(), transactionDate: payment.transactionDate?.toISOString() ?? null, createdAt: payment.createdAt.toISOString(), organizationName: payment.organization.name },
     proposal,
+    intelligence: null,
     resolved: decisions.some((decision) => decision.decision === "APPROVED"),
     history,
   };

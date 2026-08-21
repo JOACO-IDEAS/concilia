@@ -58,6 +58,7 @@ export function ResolutionActions({
                   <Button
                     size="sm"
                     variant="success"
+                    className="min-h-11 sm:min-h-8"
                     disabled={isBusy}
                     onClick={() => run(candidate.unitCode, () => elegirCandidatoAction(paymentId, candidate.unitCode))}
                   >
@@ -91,7 +92,7 @@ export function ResolutionActions({
             onConfirm={(reason) => run("reject-all", () => rechazarTodosLosCandidatosAction(paymentId, reason))}
           />
         ) : (
-          <Button variant="destructive" onClick={() => setRejectingId("all")} disabled={isBusy}>
+          <Button className="min-h-11 sm:min-h-9" variant="destructive" onClick={() => setRejectingId("all")} disabled={isBusy}>
             <XCircle size={15} />
             Ninguno es correcto
           </Button>
@@ -117,12 +118,13 @@ export function ResolutionActions({
     />
   ) : (
     <div className="flex flex-wrap gap-2">
-      <Button variant="destructive" onClick={() => setRejectingId("single")} disabled={isBusy}>
+      <Button className="min-h-11 sm:min-h-9" variant="destructive" onClick={() => setRejectingId("single")} disabled={isBusy}>
         <XCircle size={15} />
         Rechazar
       </Button>
       <Button
         variant="success"
+        className="min-h-11 sm:min-h-9"
         onClick={() => run("approve", () => aprobarDecisionHumanaAction(paymentId, proposal.unitId!))}
         disabled={isBusy}
       >

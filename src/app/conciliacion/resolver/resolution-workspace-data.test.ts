@@ -37,4 +37,16 @@ describe("getResolutionWorkspaceData", () => {
     expect(mocks.evaluationFindMany).not.toHaveBeenCalled();
     expect(mocks.decisionFindMany).not.toHaveBeenCalled();
   });
+
+  it("no finge wiring 5.0G: intelligence permanece null hasta tener persistencia real", async () => {
+    mocks.paymentFindFirst.mockResolvedValue({
+      id: "payment-1", amount: { toNumber: () => 193840 }, currency: "ARS", provider: "BANK",
+      concept: null, payerIdentifier: null, referenceNumber: null, transactionDate: null,
+      createdAt: new Date("2026-08-21T12:00:00Z"), status: "PENDING", organization: { name: "Consorcio QA" },
+    });
+    mocks.evaluationFindMany.mockResolvedValue([]);
+    mocks.decisionFindMany.mockResolvedValue([]);
+
+    await expect(getResolutionWorkspaceData("payment-1")).resolves.toMatchObject({ intelligence: null, proposal: null });
+  });
 });

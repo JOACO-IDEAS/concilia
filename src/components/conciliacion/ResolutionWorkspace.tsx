@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/Badge";
 import { formatDateTime, formatMonto } from "@/lib/format";
 import { ResolutionActions } from "./ResolutionActions";
 import { EvidenceList } from "./EvidenceList";
+import { FinancialIntelligencePanel } from "./FinancialIntelligencePanel";
 import type { ResolutionWorkspaceData } from "@/app/conciliacion/resolver/resolution-workspace-data";
 
 const historyIcon: Record<ResolutionWorkspaceData["history"][number]["kind"], typeof Inbox> = {
@@ -49,7 +50,7 @@ export function ResolutionWorkspace({ data }: { data: ResolutionWorkspaceData | 
     );
   }
 
-  const { payment, proposal, history } = data;
+  const { payment, proposal, intelligence, history } = data;
   const estado = data.resolved ? "Resuelto" : payment.status === "UNMATCHED" ? "Necesita revisión" : "Pendiente de decisión";
   const estadoTono: "green" | "amber" | "slate" = data.resolved ? "green" : payment.status === "UNMATCHED" ? "amber" : "slate";
 
@@ -108,7 +109,9 @@ export function ResolutionWorkspace({ data }: { data: ResolutionWorkspaceData | 
       <Card>
         <CardHeader title="¿Qué propone ConcilIA?" subtitle="Una propuesta se presenta sólo cuando ya existe una evaluación persistida." />
         <div className="p-5">
-          {!proposal ? (
+          {intelligence ? (
+            <FinancialIntelligencePanel intelligence={intelligence} />
+          ) : !proposal ? (
             <div className="flex gap-3 text-sm text-slate-600 dark:text-slate-300">
               <CircleAlert className="shrink-0 text-amber-500" />
               Todavía no hay una propuesta disponible para este movimiento. Necesita más información antes de decidir.
@@ -136,7 +139,7 @@ export function ResolutionWorkspace({ data }: { data: ResolutionWorkspaceData | 
       </Card>
 
       {/* C. Evidencia — bloque reutilizable; hoy sólo hay señales bancarias coincidentes. */}
-      {proposal ? (
+      {proposal && !intelligence ? (
         <Card>
           <CardHeader title="Evidencia" subtitle="En qué se basa la propuesta de ConcilIA." />
           <div className="p-5">

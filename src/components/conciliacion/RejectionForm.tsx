@@ -37,10 +37,10 @@ export function RejectionForm({
         className="w-full rounded border border-rose-200 bg-white p-2 text-sm outline-none focus:border-rose-400 disabled:opacity-60 dark:border-rose-900/50 dark:bg-slate-900"
       />
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel} disabled={pending}>
+        <Button className="min-h-11 sm:min-h-8" size="sm" variant="ghost" onClick={onCancel} disabled={pending}>
           Cancelar
         </Button>
-        <Button size="sm" variant="destructive" disabled={!reason.trim() || pending} onClick={() => onConfirm(reason)}>
+        <Button className="min-h-11 sm:min-h-8" size="sm" variant="destructive" disabled={!reason.trim() || pending} onClick={() => onConfirm(reason)}>
           {pending ? <Loader2 size={13} className="animate-spin" /> : null}
           Confirmar rechazo
         </Button>
