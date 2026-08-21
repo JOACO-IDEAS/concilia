@@ -12,25 +12,19 @@
 //   npx tsx scripts/prisma-safety/preflight.mts --target=fixtures
 //   npx tsx scripts/prisma-safety/preflight.mts --target=production
 
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolverDatasourceUrlDesdeEnv, verificarEntornoContraTarget } from "../../src/lib/prisma-safety/entornos.ts";
+import { cargarVariablesEnvAisladas } from "../../src/lib/prisma-safety/env-file.ts";
 import { ejecutarPreflightReadOnly } from "./preflight-core.mts";
 
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 
-function cargarArchivoEnv(nombreArchivo: string): void {
-  let texto: string;
+function cargarArchivoEnv(nombreArchivo: string): NodeJS.ProcessEnv {
   try {
-    texto = readFileSync(resolve(APP_ROOT, nombreArchivo), "utf8");
+    return cargarVariablesEnvAisladas(resolve(APP_ROOT, nombreArchivo));
   } catch {
     console.error(`[preflight] No se pudo leer ${nombreArchivo} — abortando.`);
     process.exit(1);
-  }
-  for (const linea of texto.split("\n")) {
-    const m = linea.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m) continue;
-    process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
 
@@ -44,9 +38,9 @@ if (argTarget !== "fixtures" && argTarget !== "production") {
 // Carga el archivo de env correspondiente al target DECLARADO — nunca el
 // que "debería" cargarse por defecto. Sigue verificándose después contra el
 // resultado real (no se confía ciegamente en qué archivo se cargó).
-cargarArchivoEnv(argTarget === "fixtures" ? ".env.fixtures.local" : ".env.local");
+const targetEnv = cargarArchivoEnv(argTarget === "fixtures" ? ".env.fixtures.local" : ".env.local");
 
-const urlEfectiva = resolverDatasourceUrlDesdeEnv(process.env);
+const urlEfectiva = resolverDatasourceUrlDesdeEnv(targetEnv);
 const resultado = verificarEntornoContraTarget(urlEfectiva, argTarget);
 
 console.log("=".repeat(70));
