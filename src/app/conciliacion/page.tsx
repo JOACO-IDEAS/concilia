@@ -17,8 +17,8 @@ export default async function ConciliacionPage() {
   return (
     <>
       <Topbar
-        title="Conciliación Bancaria"
-        subtitle="La IA prepara el match con cada Unidad Funcional — vos aprobás en 1 clic"
+        title="Conciliación"
+        subtitle="ConcilIA propone una unidad para cada pago — vos revisás lo que falta."
       />
       <main className="flex-1 p-4 sm:p-6">
         <ConciliacionTabs datosWebhooks={datosWebhooks} bandeja={bandeja} />

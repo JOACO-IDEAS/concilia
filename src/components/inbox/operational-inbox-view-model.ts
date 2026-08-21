@@ -90,6 +90,12 @@ export type OperationalInboxViewModel = {
     processedToday: SummaryMetric;
     resolvedToday: SummaryMetric;
   };
+  /** Frase única de estado operativo (TASK 5.0I.1) — agrega needsDecision +
+   * needsInformation, las dos colas reales que ya se muestran debajo. `null`
+   * cuando cualquiera de las dos no está disponible: sumar un total parcial
+   * sería un número inventado, así que en ese caso no se muestra nada acá
+   * (cada cola ya explica su propio estado de indisponibilidad). */
+  statusLine: string | null;
   attentionQueue: { available: boolean; cases: AttentionCase[] };
   informationQueue: InformationCase[];
   recentActivity: RecentActivityViewModel;
@@ -191,6 +197,20 @@ function buildResolvedTodayMetric(data: OperationalInboxData): SummaryMetric {
   return { status: "available", value: data.resolvedToday, capped: false };
 }
 
+/** "Cuánto necesita mi atención hoy" en una sola frase (TASK 5.0I.1) — nunca
+ * un número fijo: se deriva de las mismas dos métricas reales que las colas
+ * de abajo ya calcularon. Si alguna no está disponible, no se arma un total
+ * parcial engañoso. */
+function buildStatusLine(needsDecision: SummaryMetric, needsInformation: SummaryMetric): string | null {
+  if (needsDecision.status !== "available" || needsInformation.status !== "available") return null;
+  const total = needsDecision.value + needsInformation.value;
+  const capped = needsDecision.capped || needsInformation.capped;
+  if (total === 0) return "Todo al día. No hay situaciones que requieran tu atención.";
+  const situaciones = total === 1 ? "situación" : "situaciones";
+  const requiere = total === 1 ? "requiere" : "requieren";
+  return `Hay ${total}${capped ? "+" : ""} ${situaciones} que ${requiere} tu atención.`;
+}
+
 /** Una sola recomendación, derivada exclusivamente de datos ya disponibles —
  * nunca una segunda consulta. Prioriza lo más antiguo primero en cada cola,
  * consistente con el orden ascendente ya aplicado por la capa de datos. */
@@ -284,13 +304,16 @@ export function buildOperationalInboxViewModel(
   firstReviewableStatus: FirstReviewableCaseStatus,
 ): OperationalInboxViewModel {
   const firstReviewableCaseHref = reviewItems[0] ? `/conciliacion/resolver/${reviewItems[0].paymentTransactionId}` : undefined;
+  const needsDecision = buildNeedsDecisionMetric(reviewQueueAvailable, reviewItems);
+  const needsInformation = buildNeedsInformationMetric(data);
   return {
     summary: {
-      needsDecision: buildNeedsDecisionMetric(reviewQueueAvailable, reviewItems),
-      needsInformation: buildNeedsInformationMetric(data),
+      needsDecision,
+      needsInformation,
       processedToday: buildProcessedTodayMetric(data),
       resolvedToday: buildResolvedTodayMetric(data),
     },
+    statusLine: buildStatusLine(needsDecision, needsInformation),
     attentionQueue: { available: reviewQueueAvailable, cases: reviewQueueAvailable ? buildAttentionQueue(reviewItems) : [] },
     informationQueue: buildInformationQueue(data),
     recentActivity: buildRecentActivity(data),

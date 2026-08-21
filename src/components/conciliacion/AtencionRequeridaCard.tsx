@@ -16,10 +16,14 @@ import type {
 import { formatMonto } from "@/lib/format";
 import { Sparkles, MessageCircleCheck, Loader2, ArrowRight, Link2, DatabaseZap, CheckCircle2 } from "lucide-react";
 
-function toneConfianza(confidence: number): "green" | "amber" | "slate" {
-  if (confidence >= 70) return "green";
-  if (confidence >= 40) return "amber";
-  return "slate";
+/** Misma taxonomía cualitativa que ya usa `FinancialIntelligencePanel`
+ * (TASK 5.0I.1 — "no presentar precisión matemática falsa"): un porcentaje
+ * crudo no le dice nada útil al administrador. Los umbrales (70/40) son los
+ * mismos que ya existían acá, sólo cambia la etiqueta que se muestra. */
+function etiquetaConfianza(confidence: number): { tone: "green" | "amber" | "slate"; label: string } {
+  if (confidence >= 70) return { tone: "green", label: "Alta confianza" };
+  if (confidence >= 40) return { tone: "amber", label: "Requiere revisión" };
+  return { tone: "slate", label: "Evidencia insuficiente" };
 }
 
 /**
@@ -112,8 +116,8 @@ export function AtencionRequeridaCard({
                   <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <Sparkles size={11} className="shrink-0 text-blue-500" />
                     {item.sugerencia.organizationName}
-                    <Badge tone={toneConfianza(item.sugerencia.confidence)}>
-                      {item.sugerencia.confidence}% de confianza
+                    <Badge tone={etiquetaConfianza(item.sugerencia.confidence).tone}>
+                      {etiquetaConfianza(item.sugerencia.confidence).label}
                     </Badge>
                   </p>
                 ) : (

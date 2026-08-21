@@ -21,4 +21,12 @@ describe("AtencionRequeridaCard — cola de excepciones (TASK UX 5.0)", () => {
   it("usa CaseMetadata para el dato del pagador, en vez de un párrafo que pueda desbordar", () => {
     expect(source).toContain("CaseMetadata");
   });
+
+  it("TASK 5.0I.1 — la confianza de la sugerencia se muestra como etiqueta cualitativa, nunca como porcentaje crudo", () => {
+    expect(source).not.toMatch(/\{item\.sugerencia\.confidence\}%/);
+    expect(source).not.toContain("% de confianza");
+    expect(source).toContain('"Alta confianza"');
+    expect(source).toContain('"Requiere revisión"');
+    expect(source).toContain('"Evidencia insuficiente"');
+  });
 });

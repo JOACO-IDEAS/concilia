@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const inboxSourceFiles = [
   "./OperationalInbox.tsx",
   "./operational-inbox-view-model.ts",
+  "./OperationalStatusLine.tsx",
   "./AttentionQueue.tsx",
   "./InformationQueue.tsx",
   "./RecentActivity.tsx",
@@ -45,6 +46,15 @@ describe("OperationalInbox — enlaces de Human Review y arquitectura del módul
 
   it("no hay ningún control de AUTO en el módulo de Inicio", () => {
     for (const source of inboxSourceFiles) expect(source).not.toMatch(/\bAUTO\b/);
+  });
+
+  it("TASK 5.0I.1 — la frase de estado operativo (jerarquía #1) se renderiza antes que la cola de decisión", () => {
+    const source = readFileSync(new URL("./OperationalInbox.tsx", import.meta.url), "utf8");
+    const statusLineIndex = source.indexOf("<OperationalStatusLine");
+    const attentionQueueIndex = source.indexOf("<AttentionQueue");
+    expect(statusLineIndex).toBeGreaterThan(-1);
+    expect(attentionQueueIndex).toBeGreaterThan(-1);
+    expect(statusLineIndex).toBeLessThan(attentionQueueIndex);
   });
 
   it("cada componente de fila con texto variable usa min-w-0 — regresión del overflow horizontal móvil (UX.3.1 sección 4)", () => {

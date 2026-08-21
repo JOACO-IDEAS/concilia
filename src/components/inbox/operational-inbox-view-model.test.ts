@@ -164,6 +164,37 @@ describe("buildOperationalInboxViewModel — cola de revisión no disponible", (
   });
 });
 
+describe("buildOperationalInboxViewModel — statusLine (TASK 5.0I.1, jerarquía #1 de Inicio)", () => {
+  it("todo al día: frase honesta de éxito, no null ni un '0 situaciones' frío", () => {
+    const vm = buildVm(baseData);
+    expect(vm.statusLine).toBe("Todo al día. No hay situaciones que requieran tu atención.");
+  });
+
+  it("suma needsDecision + needsInformation reales — nunca un número fijo", () => {
+    const data: OperationalInboxData = { ...baseData, needsInformation: [needsInfoPayment()] };
+    const vm = buildVm(data, [reviewItem(), reviewItem({ id: "single:pt-2", paymentTransactionId: "pt-2" })]);
+    expect(vm.statusLine).toBe("Hay 3 situaciones que requieren tu atención.");
+  });
+
+  it("singular correcto cuando el total es exactamente 1", () => {
+    const vm = buildVm(baseData, [reviewItem()]);
+    expect(vm.statusLine).toBe("Hay 1 situación que requiere tu atención.");
+  });
+
+  it("propaga capped como '+' cuando cualquiera de las dos colas alcanzó su límite de consulta", () => {
+    const data: OperationalInboxData = { ...baseData, needsInformation: Array.from({ length: 8 }, (_, i) => needsInfoPayment({ id: `pt-${i}` })) };
+    const vm = buildVm(data);
+    expect(vm.statusLine).toBe("Hay 8+ situaciones que requieren tu atención.");
+  });
+
+  it("nunca arma un total parcial: si needsDecision no está disponible, statusLine es null aunque needsInformation sí lo esté", () => {
+    const data: OperationalInboxData = { ...baseData, needsInformation: [needsInfoPayment()] };
+    const vm = buildVm(data, [], false);
+    expect(vm.summary.needsInformation.status).toBe("available");
+    expect(vm.statusLine).toBeNull();
+  });
+});
+
 describe("buildOperationalInboxViewModel — métricas con límite de consulta (capped)", () => {
   it("needsInformation se marca capped al alcanzar el límite de 8 (take:8 de la consulta real)", () => {
     const data: OperationalInboxData = { ...baseData, needsInformation: Array.from({ length: 8 }, (_, i) => needsInfoPayment({ id: `pt-${i}` })) };

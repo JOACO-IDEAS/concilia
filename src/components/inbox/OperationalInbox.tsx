@@ -1,6 +1,7 @@
 import type { FirstReviewableCaseStatus, OperationalInboxData, OperationalReviewItem } from "@/app/operational-inbox-data";
 import { buildOperationalInboxViewModel } from "./operational-inbox-view-model";
 import { OperationalHeader } from "./OperationalHeader";
+import { OperationalStatusLine } from "./OperationalStatusLine";
 import { OperationalSummary } from "./OperationalSummary";
 import { RecommendedNextStep } from "./RecommendedNextStep";
 import { AttentionQueue } from "./AttentionQueue";
@@ -49,6 +50,7 @@ export function OperationalInbox({
         <SetupJourney journey={viewModel.setupJourney} />
       ) : (
         <>
+          <OperationalStatusLine statusLine={viewModel.statusLine} />
           <AttentionQueue available={viewModel.attentionQueue.available} cases={viewModel.attentionQueue.cases} />
           <RecommendedNextStep nextStep={viewModel.nextStep} />
           <InformationQueue cases={viewModel.informationQueue} />
