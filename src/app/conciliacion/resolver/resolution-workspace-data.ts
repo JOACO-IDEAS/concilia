@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireCurrentAdministrator } from "@/lib/auth/session";
 import type { ReconciliationIntelligenceViewModel } from "@/lib/payer-identity/reconciliation-intelligence-view-model";
+import { loadRuntimeFinancialIntelligence } from "@/lib/payer-identity/runtime-financial-intelligence";
+import { MATCH_ENGINE_VERSION } from "@/lib/reconciliation/version";
 
 type Candidate = { unitCode: string; matchedSignals: string[] };
 
@@ -21,7 +23,7 @@ export type ResolutionWorkspaceData = {
     organizationName: string;
   };
   proposal: null | { kind: "SINGLE" | "AMBIGUOUS"; unitId: string | null; unitCode: string | null; explanation: string; evidence: string[]; candidates: Candidate[] };
-  /** Presentation contract ready for 5.0G. Null until historical resolution has real persistence/data-access wiring. */
+  /** Real, read-only 5.0G presentation result; null when no current persisted financial evaluation exists. */
   intelligence: ReconciliationIntelligenceViewModel | null;
   resolved: boolean;
   history: { id: string; kind: "RECEIVED" | "PROPOSED" | "APPROVED" | "REJECTED"; title: string; detail: string; createdAt: string }[];
@@ -51,22 +53,31 @@ function readEvidence(value: unknown): { evidence: string[]; candidates: Candida
 export async function getResolutionWorkspaceData(paymentTransactionId: string): Promise<ResolutionWorkspaceData | null> {
   const administrator = await requireCurrentAdministrator();
   const payment = await prisma.paymentTransaction.findFirst({
-    where: { id: paymentTransactionId, organization: { administrators: { some: { administratorId: administrator.id } } } },
-    select: { id: true, amount: true, currency: true, provider: true, concept: true, payerIdentifier: true, referenceNumber: true, transactionDate: true, createdAt: true, status: true, organization: { select: { name: true } } },
+    where: { id: paymentTransactionId, organization: { status: "ACTIVE", deletedAt: null, administrators: { some: { administratorId: administrator.id, administrator: { deletedAt: null } } } } },
+    select: { id: true, organizationId: true, amount: true, currency: true, provider: true, concept: true, payerIdentifier: true, referenceNumber: true, transactionDate: true, createdAt: true, status: true, organization: { select: { name: true } } },
   });
-  if (!payment?.organization) return null;
+  if (!payment?.organization || !payment.organizationId) return null;
+  const organizationId = payment.organizationId;
 
-  const [evaluations, decisions] = await Promise.all([
+  const [evaluations, decisions, shadow, confirmedCorrelations] = await Promise.all([
     prisma.paymentEvidenceAssessmentLog.findMany({
-      where: { paymentTransactionId },
+      where: { paymentTransactionId, paymentTransaction: { organizationId } },
       select: { id: true, candidateUnitId: true, explanation: true, structuredEvidence: true, evaluatedAt: true },
       orderBy: { evaluatedAt: "desc" },
       take: 8,
     }),
     prisma.reconciliationMatch.findMany({
-      where: { paymentTransactionId },
+      where: { paymentTransactionId, paymentTransaction: { organizationId } },
       select: { id: true, decision: true, reason: true, rejectionReason: true, decidedBy: true, createdAt: true },
       orderBy: { createdAt: "asc" },
+    }),
+    prisma.shadowMatchLog.findFirst({
+      where: { paymentTransactionId, engineVersion: MATCH_ENGINE_VERSION, paymentTransaction: { organizationId } },
+      select: { candidateUnitId: true, candidateUnitOwnerId: true, candidateObligationId: true, score: true, tier: true, topCandidates: true, signals: true, blockers: true },
+    }),
+    prisma.paymentEvidenceCorrelation.findMany({
+      where: { organizationId, paymentTransactionId, paymentTransaction: { organizationId }, status: "CONFIRMED", paymentNotice: { organizationId, linkedPaymentTransactionId: paymentTransactionId } },
+      select: { paymentNotice: { select: { phone: true } } },
     }),
   ]);
   const latest = evaluations[0];
@@ -82,11 +93,17 @@ export async function getResolutionWorkspaceData(paymentTransactionId: string): 
     ...evaluations.map((evaluation) => ({ id: `proposal:${evaluation.id}`, kind: "PROPOSED" as const, title: "ConcilIA analizó el movimiento", detail: evaluation.explanation, createdAt: evaluation.evaluatedAt.toISOString() })),
     ...decisions.map((decision) => ({ id: `decision:${decision.id}`, kind: decision.decision === "APPROVED" ? "APPROVED" as const : "REJECTED" as const, title: decision.decision === "APPROVED" ? "Un administrador aprobó una conciliación" : "Un administrador rechazó una propuesta", detail: decision.rejectionReason ?? decision.reason, createdAt: decision.createdAt.toISOString() })),
   ].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const intelligence = await loadRuntimeFinancialIntelligence({
+    organizationId,
+    paymentTransactionId,
+    shadow,
+    confirmedNoticePhones: confirmedCorrelations.map((item) => item.paymentNotice.phone),
+  });
 
   return {
     payment: { ...payment, amount: payment.amount.toNumber(), transactionDate: payment.transactionDate?.toISOString() ?? null, createdAt: payment.createdAt.toISOString(), organizationName: payment.organization.name },
     proposal,
-    intelligence: null,
+    intelligence,
     resolved: decisions.some((decision) => decision.decision === "APPROVED"),
     history,
   };
