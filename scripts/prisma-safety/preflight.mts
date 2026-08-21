@@ -12,9 +12,10 @@
 //   npx tsx scripts/prisma-safety/preflight.mts --target=fixtures
 //   npx tsx scripts/prisma-safety/preflight.mts --target=production
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolverDatasourceUrlDesdeEnv, verificarEntornoContraTarget } from "../../src/lib/prisma-safety/entornos.ts";
+import { ejecutarPreflightReadOnly } from "./preflight-core.mts";
 
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 
@@ -64,45 +65,4 @@ if (!urlEfectiva) {
   process.exit(1);
 }
 
-// Recién acá, con el entorno YA confirmado, se abre una conexión — y
-// exclusivamente para SELECTs de introspección.
-const { Client } = await import("pg");
-const client = new Client({ connectionString: urlEfectiva });
-await client.connect();
-
-try {
-  const { rows: dbRows } = await client.query<{ current_database: string; current_schema: string }>(
-    "SELECT current_database(), current_schema();"
-  );
-  const { current_database: database, current_schema: schema } = dbRows[0];
-  console.log(`[preflight] database:             ${database}`);
-  console.log(`[preflight] schema:               ${schema}`);
-
-  let aplicadas: string[] = [];
-  try {
-    const { rows } = await client.query<{ migration_name: string }>(
-      "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY started_at ASC;"
-    );
-    aplicadas = rows.map((r) => r.migration_name);
-  } catch {
-    console.log("[preflight] (no existe _prisma_migrations todavía en este destino — 0 migraciones aplicadas)");
-  }
-
-  const locales = readdirSync(resolve(APP_ROOT, "prisma/migrations"))
-    .filter((f) => f !== "migration_lock.toml")
-    .sort();
-
-  const pendientes = locales.filter((m) => !aplicadas.includes(m));
-
-  console.log(`[preflight] migraciones aplicadas en destino: ${aplicadas.length}`);
-  console.log(`[preflight] migraciones locales en el repo:   ${locales.length}`);
-  console.log(`[preflight] migraciones PENDIENTES:           ${pendientes.length}`);
-  if (pendientes.length > 0) {
-    for (const p of pendientes) console.log(`  - ${p}`);
-  }
-
-  console.log("=".repeat(70));
-  console.log(`[preflight] OK — seguro proceder contra "${resultado.entornoDetectado}" (host confirmado, entorno confirmado).`);
-} finally {
-  await client.end();
-}
+await ejecutarPreflightReadOnly(urlEfectiva, argTarget);

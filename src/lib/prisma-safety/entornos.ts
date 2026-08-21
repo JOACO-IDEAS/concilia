@@ -59,7 +59,19 @@ export function detectarEntornoPorHost(host: string | null | undefined): Entorno
  * nunca puedan calcular un valor distinto del que Prisma realmente va a usar.
  */
 export function resolverDatasourceUrlDesdeEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return env.DIRECT_URL ?? env.DATABASE_URL_UNPOOLED ?? env.DATABASE_URL;
+  return resolverDatasourceSeleccionDesdeEnv(env)?.url;
+}
+
+export type VariableDatasource = "DIRECT_URL" | "DATABASE_URL_UNPOOLED" | "DATABASE_URL";
+
+/** Devuelve también la variable elegida para que wrappers y tests auditen la precedencia sin duplicarla. */
+export function resolverDatasourceSeleccionDesdeEnv(
+  env: NodeJS.ProcessEnv = process.env
+): { variable: VariableDatasource; url: string } | null {
+  if (env.DIRECT_URL) return { variable: "DIRECT_URL", url: env.DIRECT_URL };
+  if (env.DATABASE_URL_UNPOOLED) return { variable: "DATABASE_URL_UNPOOLED", url: env.DATABASE_URL_UNPOOLED };
+  if (env.DATABASE_URL) return { variable: "DATABASE_URL", url: env.DATABASE_URL };
+  return null;
 }
 
 /**
