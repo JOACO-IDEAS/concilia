@@ -97,7 +97,7 @@ export async function getResolutionWorkspaceData(paymentTransactionId: string): 
     organizationId,
     paymentTransactionId,
     shadow,
-    confirmedNoticePhones: confirmedCorrelations.map((item) => item.paymentNotice.phone),
+    confirmedNoticePhones: confirmedCorrelations.flatMap((item) => item.paymentNotice ? [item.paymentNotice.phone] : []),
   });
 
   return {

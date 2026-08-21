@@ -53,7 +53,7 @@ export async function learnFromPersistedHumanConfirmation(decisionId: string, re
     },
     select: { paymentNotice: { select: { phone: true } } },
   });
-  const fingerprints = identityFingerprintsForNoticePhones(correlations.map((item) => item.paymentNotice.phone));
+  const fingerprints = identityFingerprintsForNoticePhones(correlations.flatMap((item) => item.paymentNotice ? [item.paymentNotice.phone] : []));
   if (fingerprints.length === 0) return empty("NO_SIGNAL");
 
   const signals = await prisma.payerIdentitySignal.findMany({

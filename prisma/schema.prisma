@@ -860,6 +860,7 @@ model PaymentEvidenceExtractionRun {
   administrator    Administrator                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   createdAt        DateTime                        @default(now())
   facts            PaymentEvidenceFact[]
+  correlations     PaymentEvidenceCorrelation[]
 
   @@index([organizationId, intakeId, extractedAt])
   @@index([intakeId, status])
@@ -1088,8 +1089,10 @@ model PaymentEvidenceCorrelation {
   id                   String                           @id @default(cuid())
   organizationId       String
   organization         Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paymentNoticeId      String
-  paymentNotice        PaymentNotice                    @relation(fields: [paymentNoticeId], references: [id], onDelete: Cascade)
+  paymentNoticeId      String?
+  paymentNotice        PaymentNotice?                   @relation(fields: [paymentNoticeId], references: [id], onDelete: Cascade)
+  extractionRunId      String?
+  extractionRun        PaymentEvidenceExtractionRun?    @relation(fields: [extractionRunId], references: [id], onDelete: Restrict)
   paymentTransactionId String
   paymentTransaction   PaymentTransaction               @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
   status               PaymentEvidenceCorrelationStatus
@@ -1106,10 +1109,12 @@ model PaymentEvidenceCorrelation {
   payerUnitEvidenceEvents PayerUnitEvidenceEvent[]
 
   @@unique([paymentNoticeId, paymentTransactionId, status])
+  @@unique([extractionRunId, paymentTransactionId, status])
   @@index([organizationId])
   @@index([paymentTransactionId])
   @@index([paymentNoticeId, status])
   @@index([evidenceAssessmentLogId])
+  @@index([extractionRunId])
   @@index([decidedBy])
   @@map("payment_evidence_correlations")
 }
