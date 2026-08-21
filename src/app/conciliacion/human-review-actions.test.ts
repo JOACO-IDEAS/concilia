@@ -7,9 +7,8 @@ import { FIXTURES_HOST_FRAGMENT } from "@/lib/prisma-safety/entornos";
 // `obligation`, `unit` ni `unitOwner` (solo `findMany`/`findUnique`/
 // `findFirst` de lectura). Si esta capa alguna vez intentara escribir algo
 // fuera de `reconciliationMatch.create`, explotaría en runtime — prueba
-// estructural de que la única escritura funcional de esta fase es la
-// decisión humana (Regla de Seguridad del pedido), y de que AUTO es
-// imposible (ningún delegate de escritura alcanzable salvo ReconciliationMatch).
+// estructural de que la acción primaria sólo escribe la decisión humana;
+// el learning post-commit se verifica detrás de su service boundary.
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -141,6 +140,8 @@ vi.mock("@/lib/auth/session", () => ({ requireCurrentAdministrator: vi.fn(async 
 vi.mock("@/lib/auth/organization-access", () => ({ requireOrganizationAccess: vi.fn(async () => ({ administrator: { id: "admin-1" }, organizationId: "org-1" })) }));
 const { mockAppendProductEventSafely } = vi.hoisted(() => ({ mockAppendProductEventSafely: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/product-observability/runtime", () => ({ appendProductEventSafely: mockAppendProductEventSafely }));
+const { mockLearnFromConfirmation } = vi.hoisted(() => ({ mockLearnFromConfirmation: vi.fn().mockResolvedValue({ status: "LEARNED" }) }));
+vi.mock("@/lib/payer-identity/human-confirmation-learning-runtime", () => ({ learnFromPersistedHumanConfirmation: mockLearnFromConfirmation }));
 
 const { listarCasosRevisablesAction, aprobarDecisionHumanaAction, rechazarDecisionHumanaAction } = await import("./human-review-actions");
 const { inferirProvenanceDeDecision } = await import("@/lib/calibration/decision-provenance");
@@ -160,6 +161,7 @@ beforeEach(() => {
   });
   mockPrisma.paymentTransaction.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "pay-1" ? { id: "pay-1", organizationId: "org-1" } : null));
   mockPrisma.unit.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "unit-1" ? { organizationId: "org-1", obligations: [] } : null));
+  mockLearnFromConfirmation.mockResolvedValue({ status: "LEARNED" });
 });
 
 describe("listarCasosRevisablesAction", () => {
@@ -196,6 +198,18 @@ describe("listarCasosRevisablesAction", () => {
 });
 
 describe("aprobarDecisionHumanaAction", () => {
+  it("dispara learning sólo después de persistir la decisión APPROVED exacta", async () => {
+    const result = await aprobarDecisionHumanaAction("pay-1", "unit-1");
+    expect(result.ok).toBe(true);
+    expect(mockLearnFromConfirmation).toHaveBeenCalledWith("match-1", "admin-1");
+    expect(mockPrisma.reconciliationMatch.create.mock.invocationCallOrder[0]).toBeLessThan(mockLearnFromConfirmation.mock.invocationCallOrder[0]);
+  });
+
+  it("un fallo secundario de learning no pierde la decisión humana", async () => {
+    mockLearnFromConfirmation.mockRejectedValueOnce(new Error("storage unavailable"));
+    await expect(aprobarDecisionHumanaAction("pay-1", "unit-1")).resolves.toMatchObject({ ok: true });
+    expect(mockPrisma.reconciliationMatch.create).toHaveBeenCalledTimes(1);
+  });
   // Escenario #4: APPROVE llama registrarDecisionHumana correctamente.
   it("registra una fila APPROVED con score/signals reales de la evaluación", async () => {
     const r = await aprobarDecisionHumanaAction("pay-1", "unit-1");
@@ -244,7 +258,7 @@ describe("aprobarDecisionHumanaAction", () => {
   });
 
   // Escenario #9-12: no modifica PaymentTransaction/Obligation/Unit/UnitOwner.
-  it("nunca llama ningún método de escritura fuera de reconciliationMatch.create", async () => {
+  it("la acción primaria no escribe recursos contables fuera de reconciliationMatch.create", async () => {
     await aprobarDecisionHumanaAction("pay-1", "unit-1");
     expect(mockPrisma.paymentTransaction).not.toHaveProperty("update");
     expect(mockPrisma.paymentTransaction).not.toHaveProperty("create");

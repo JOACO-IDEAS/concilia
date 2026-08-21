@@ -126,6 +126,8 @@ vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 vi.mock("@/lib/auth/session", () => ({ requireCurrentAdministrator: vi.fn(async () => ({ id: "admin-1", email: "admin@example.com", name: "Admin" })) }));
 vi.mock("@/lib/auth/organization-access", () => ({ requireOrganizationAccess: vi.fn(async () => ({ administrator: { id: "admin-1" }, organizationId: "org-1" })) }));
 vi.mock("@/lib/product-observability/runtime", () => ({ appendProductEventSafely: vi.fn().mockResolvedValue(true) }));
+const { mockLearnFromConfirmation } = vi.hoisted(() => ({ mockLearnFromConfirmation: vi.fn().mockResolvedValue({ status: "LEARNED" }) }));
+vi.mock("@/lib/payer-identity/human-confirmation-learning-runtime", () => ({ learnFromPersistedHumanConfirmation: mockLearnFromConfirmation }));
 
 const { listarCasosAmbiguosAction, elegirCandidatoAction, rechazarTodosLosCandidatosAction } = await import("./human-review-actions");
 const { inferirProvenanceDeDecision } = await import("@/lib/calibration/decision-provenance");
@@ -144,6 +146,7 @@ beforeEach(() => {
     return fila;
   });
   mockPrisma.paymentTransaction.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "pay-ambiguo" ? { organizationId: "org-1" } : null));
+  mockLearnFromConfirmation.mockResolvedValue({ status: "LEARNED" });
 });
 
 describe("listarCasosAmbiguosAction", () => {
@@ -168,6 +171,10 @@ describe("listarCasosAmbiguosAction", () => {
 });
 
 describe("elegirCandidatoAction", () => {
+  it("procesa learning desde el APPROVED persistido para el candidato elegido", async () => {
+    await elegirCandidatoAction("pay-ambiguo", "2B");
+    expect(mockLearnFromConfirmation).toHaveBeenCalledWith("match-1", "admin-1");
+  });
   it("registra APPROVED con el unitId real resuelto y el score real del candidato elegido", async () => {
     const r = await elegirCandidatoAction("pay-ambiguo", "2B");
     expect(r.ok).toBe(true);
@@ -210,7 +217,7 @@ describe("elegirCandidatoAction", () => {
     expect(inferirProvenanceDeDecision(data.reason, data.rejectionReason)).toBe("SYNTHETIC_DEMO");
   });
 
-  it("nunca llama ningún método de escritura fuera de reconciliationMatch.create", async () => {
+  it("la acción primaria no escribe recursos contables fuera de reconciliationMatch.create", async () => {
     await elegirCandidatoAction("pay-ambiguo", "2B");
     expect(mockPrisma.paymentTransaction).not.toHaveProperty("update");
     expect(mockPrisma.unit).not.toHaveProperty("update");

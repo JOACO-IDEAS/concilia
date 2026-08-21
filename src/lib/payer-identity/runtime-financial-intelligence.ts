@@ -137,6 +137,11 @@ function phoneFingerprint(type: "PHONE" | "WHATSAPP", phone: string) {
   return normalized ? createHash("sha256").update(`${type}\0${normalized}`, "utf8").digest("hex") : null;
 }
 
+/** Same case-to-identity rule used by runtime reading and confirmation learning. */
+export function identityFingerprintsForNoticePhones(phones: readonly string[]) {
+  return [...new Set(phones.flatMap((phone) => [phoneFingerprint("PHONE", phone), phoneFingerprint("WHATSAPP", phone)]).filter((item): item is string => Boolean(item)))];
+}
+
 /** Tenant-scoped read model. Absence or ambiguity of identity degrades to financial-only. */
 export async function loadRuntimeFinancialIntelligence(input: {
   organizationId: string;
@@ -152,7 +157,7 @@ export async function loadRuntimeFinancialIntelligence(input: {
     ...(input.shadow.candidateUnitId ? [{ id: input.shadow.candidateUnitId }] : []),
   ];
 
-  const fingerprints = [...new Set(input.confirmedNoticePhones.flatMap((phone) => [phoneFingerprint("PHONE", phone), phoneFingerprint("WHATSAPP", phone)]).filter((item): item is string => Boolean(item)))];
+  const fingerprints = identityFingerprintsForNoticePhones(input.confirmedNoticePhones);
   const [units, signals] = await Promise.all([
     prisma.unit.findMany({
       where: { organizationId: input.organizationId, deletedAt: null, OR: candidateSelectors },

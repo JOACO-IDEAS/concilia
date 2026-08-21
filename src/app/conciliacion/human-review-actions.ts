@@ -1,9 +1,10 @@
 "use server";
 
 // Fase 5.12 — Server Actions de la bandeja de revisión humana real
-// (/conciliacion/revision-humana). ÚNICA escritura funcional de esta fase:
-// `registrarDecisionHumana()` (Fase 5.8, sin cambios) — nunca toca
-// PaymentTransaction, Obligation, Unit ni UnitOwner. Sin AUTO en ningún
+// (/conciliacion/revision-humana). La escritura autoritativa sigue siendo
+// `registrarDecisionHumana()`; tras su commit, 5.1B procesa learning
+// idempotente en memoria histórica. Nunca toca PaymentTransaction,
+// Obligation, Unit ni UnitOwner. Sin AUTO en ningún
 // camino: `decision` siempre viene fijo en el código (APPROVED/REJECTED),
 // nunca de un parámetro externo.
 //
@@ -40,6 +41,7 @@ import { MARCADOR_DECISION_SINTETICA_DEMO } from "@/lib/calibration/decision-pro
 import { requireOrganizationAccess } from "@/lib/auth/organization-access";
 import { requireCurrentAdministrator } from "@/lib/auth/session";
 import { appendProductEventSafely } from "@/lib/product-observability/runtime";
+import { learnFromPersistedHumanConfirmation } from "@/lib/payer-identity/human-confirmation-learning-runtime";
 
 const PATH = "/conciliacion/revision-humana";
 
@@ -243,6 +245,15 @@ async function registrarActividadDecision(administratorId: string, organizationI
   }
 }
 
+/** Best-effort after commit: replay is safe and a secondary failure never loses the human decision. */
+async function aprenderDeDecisionPersistida(decisionId: string, administratorId: string): Promise<void> {
+  try {
+    await learnFromPersistedHumanConfirmation(decisionId, administratorId);
+  } catch {
+    console.error(`[human-confirmation-learning] No se pudo procesar decisionId=${decisionId}.`);
+  }
+}
+
 /**
  * APROBAR — decision=APPROVED, fijo en el código (nunca AUTO, nunca
  * parametrizable). Provenance ORGANIC resultante SOLO si el entorno
@@ -265,7 +276,7 @@ export async function aprobarDecisionHumanaAction(paymentTransactionId: string, 
     const structuredEvidence = evaluacion.structuredEvidence as StructuredEvidenceSnapshot | null;
     const obligationId = await obligationIdDeLaUnidad(candidateUnitId);
 
-    await prisma.$transaction((tx) =>
+    const decision = await prisma.$transaction((tx) =>
       registrarDecisionHumana(tx, {
         paymentTransactionId,
         unitId: candidateUnitId,
@@ -278,6 +289,7 @@ export async function aprobarDecisionHumanaAction(paymentTransactionId: string, 
       })
     );
 
+    await aprenderDeDecisionPersistida(decision.id, administrator.id);
     await registrarActividadDecision(administrator.id, organizationId, paymentTransactionId, "CASE_APPROVED");
 
     revalidatePath(PATH);
@@ -382,7 +394,7 @@ export async function elegirCandidatoAction(paymentTransactionId: string, unitCo
     const obligationId = await obligationIdDeLaUnidad(unitId);
     const señalesTexto = candidato.matchedSignals.length > 0 ? ` Señales reales que lo distinguían: ${candidato.matchedSignals.join(", ")} (score=${candidato.score}, tier=${candidato.tier ?? "—"}).` : "";
 
-    await prisma.$transaction((tx) =>
+    const decision = await prisma.$transaction((tx) =>
       registrarDecisionHumana(tx, {
         paymentTransactionId,
         unitId,
@@ -396,6 +408,7 @@ export async function elegirCandidatoAction(paymentTransactionId: string, unitCo
       })
     );
 
+    await aprenderDeDecisionPersistida(decision.id, administrator.id);
     await registrarActividadDecision(administrator.id, organizationId, paymentTransactionId, "CASE_APPROVED");
 
     revalidatePath(PATH);
