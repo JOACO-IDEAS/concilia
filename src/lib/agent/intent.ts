@@ -16,6 +16,13 @@ export type AgentIntent = { capability: AgentCapabilityName; input: Record<strin
 export function resolveAgentIntent(message: string): AgentIntent | null {
   const normalized = normalizeIntent(message);
   if (TODAY_ATTENTION_INTENTS.has(normalized)) return { capability: "TODAY_ATTENTION", input: {} };
+  if (/\b(factura|seguro|poliza|contrato|certificado|recibo|resumen|documento)\b/.test(normalized)) {
+    const types: Array<[RegExp, string]> = [[/\bfactura\b/, "INVOICE"], [/\b(seguro|poliza)\b/, "INSURANCE_POLICY"], [/\bcontrato\b/, "CONTRACT"], [/\bcertificado\b/, "CERTIFICATE"], [/\brecibo\b/, "RECEIPT"], [/\bresumen\b/, "STATEMENT"]];
+    const documentType = types.find(([pattern]) => pattern.test(normalized))?.[1] ?? "OTHER";
+    const period = normalized.match(/\b(\d{4}-(?:0[1-9]|1[0-2]))\b/)?.[1];
+    const provider = normalized.match(/(?:de|del proveedor)\s+([a-z0-9 áéíóúñ.&-]{2,80}?)(?:\s+(?:de|para|del)\s+\d{4}-\d{2}|$)/)?.[1]?.trim();
+    return { capability: "DOCUMENT_LOOKUP", input: { documentType, ...(period ? { period } : {}), ...(provider ? { provider } : {}) } };
+  }
   if (/^(que )?pagos (necesitan|requieren) (revision|mi decision)$|^(mostrame )?conciliaciones pendientes$|^pagos para revisar$/.test(normalized)) return { capability: "RECONCILIATION_REVIEW", input: {} };
   if (/^(donde tengo (mas|mayor) mora|que consorcios tienen mayor deuda|mostrame los principales saldos pendientes|quien debe mas)$/.test(normalized)) return { capability: "DEBT_OVERVIEW", input: {} };
   if (/\b(pago|movimiento)\b/.test(normalized)) {

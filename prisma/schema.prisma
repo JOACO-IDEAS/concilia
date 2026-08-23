@@ -316,6 +316,7 @@ model Administrator {
   paymentEvidenceExtractionRuns     PaymentEvidenceExtractionRun[]
   whatsAppChannelConnectionsCreated WhatsAppChannelConnection[]
   agentConversations                AgentConversation[]
+  administrativeDocumentsCreated    AdministrativeDocument[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -406,6 +407,7 @@ model Organization {
   // ProviderOrganization/ProviderDocument más abajo.
   providerOrganizations         ProviderOrganization[]
   providerDocuments             ProviderDocument[]
+  administrativeDocuments       AdministrativeDocument[]
   agentObservations             AgentObservation[]
 
   createdAt DateTime  @default(now())
@@ -1409,11 +1411,12 @@ model Provider {
   taxId     String? // CUIT — nullable (puede cargarse el proveedor antes de tener el dato), único cuando está presente
   matricula String?
 
-  organizations     ProviderOrganization[]
-  documents         ProviderDocument[]
+  organizations           ProviderOrganization[]
+  documents               ProviderDocument[]
+  administrativeDocuments AdministrativeDocument[]
   // Fase 4 Parte D — relación inversa obligatoria de Prisma (sintaxis, cero
   // columna real nueva acá). Ver AgentObservation más abajo.
-  agentObservations AgentObservation[]
+  agentObservations       AgentObservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1421,6 +1424,50 @@ model Provider {
 
   @@unique([taxId])
   @@map("providers")
+}
+
+enum AdministrativeDocumentType {
+  INVOICE
+  CONTRACT
+  RECEIPT
+  STATEMENT
+  OTHER
+}
+
+enum AdministrativeDocumentStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// Metadata tenant-scoped para documentación administrativa general. El
+// archivo es opcional y se referencia mediante un identificador opaco; nunca
+// se persisten URLs públicas ni se sobrecarga PaymentEvidenceIntake.
+model AdministrativeDocument {
+  id                       String                       @id @default(cuid())
+  organizationId           String
+  providerId               String?
+  createdByAdministratorId String?
+  type                     AdministrativeDocumentType
+  status                   AdministrativeDocumentStatus @default(ACTIVE)
+  title                    String
+  period                   DateTime?
+  issuedAt                 DateTime?
+  expiresAt                DateTime?
+  amount                   Decimal?                     @db.Decimal(14, 2)
+  currency                 String?
+  storageReference         String?
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  deletedAt                DateTime?
+
+  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  provider               Provider?      @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  createdByAdministrator Administrator? @relation(fields: [createdByAdministratorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, type, period])
+  @@index([organizationId, expiresAt])
+  @@index([organizationId, providerId])
+  @@map("administrative_documents")
 }
 
 // La relación N:M explícita Provider↔Organization — un proveedor puede

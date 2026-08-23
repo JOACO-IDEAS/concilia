@@ -16,6 +16,7 @@ export function modelSafeProjection(response: AgentResponse): unknown {
   if (presentation.kind === "RECONCILIATION_REVIEW") return { summary: response.message, cases: presentation.cases.map(({ title, organizationName, amountLabel, reason }) => ({ title, organizationName, amountLabel, reason })) };
   if (presentation.kind === "DEBT_OVERVIEW") return { summary: response.message, results: presentation.results.map(({ organizationName, outstandingLabel, overdueUnits }) => ({ organizationName, outstandingLabel, overdueUnits })) };
   if (presentation.kind === "RECONCILIATION_LOOKUP") return { summary: response.message, matches: presentation.matches.map(({ amountLabel, organizationName, dateLabel, status }) => ({ amountLabel, organizationName, dateLabel, status })) };
+  if (presentation.kind === "DOCUMENT_LOOKUP") return { summary: response.message, outcome: presentation.outcome, documents: presentation.documents.map(({ documentType, title, organizationName, providerName, periodLabel, issuedAtLabel, expiresAtLabel, amountLabel, availability }) => ({ documentType, title, organizationName, providerName, periodLabel, issuedAtLabel, expiresAtLabel, amountLabel, availability })) };
   return { summary: response.message, organizations: presentation.organizations.map(({ name, address, status, unitCount, paymentCount }) => ({ name, address, status, unitCount, paymentCount })) };
 }
 

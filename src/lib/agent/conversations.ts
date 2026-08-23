@@ -8,6 +8,7 @@ import { loadReconciliationReview } from "./reconciliation-review-tool";
 import { loadDebtOverview } from "./debt-overview-tool";
 import { loadReconciliationLookup } from "./reconciliation-lookup-tool";
 import { loadOrganizationLookup } from "./organization-lookup-tool";
+import { loadDocumentLookup } from "./document-lookup-tool";
 import { AGENT_MESSAGE_MAX_LENGTH, AGENT_TITLE_MAX_LENGTH } from "./contracts";
 import { createOpenAIAgentProvider } from "./model-provider";
 import { boundedConversationContext, orchestrateAgentTurn } from "./orchestration";
@@ -101,6 +102,7 @@ async function executeOperationalCapability(capability: Parameters<typeof execut
       debtOverview: () => loadDebtOverview(tx, administratorId),
       reconciliationLookup: (input) => loadReconciliationLookup(tx, administratorId, organizationId, input),
       organizationLookup: (query) => loadOrganizationLookup(tx, administratorId, query),
+      documentLookup: (input) => loadDocumentLookup(tx, administratorId, organizationId, input),
   }));
 }
 
