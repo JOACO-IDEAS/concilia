@@ -130,6 +130,7 @@ export function AgentWorkspace({
               <div className="flex min-h-[45vh] flex-col items-center justify-center text-center">
                 <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">ConcilIA Agent</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">¿Qué necesitás resolver?</h2>
+                <p className="mt-2 max-w-xl text-sm text-slate-500 dark:text-slate-400">Preguntá con tus propias palabras sobre la operación, conciliaciones, deuda o consorcios.</p>
                 <div className="mt-7 grid w-full gap-2 sm:grid-cols-2">
                   {SUGGESTIONS.map((suggestion) => <button key={suggestion} type="button" onClick={() => submit(suggestion)} disabled={pending || !organizationId} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">{suggestion}</button>)}
                 </div>

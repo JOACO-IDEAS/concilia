@@ -3,16 +3,14 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { executeAgentCapability, type AgentResponse } from "./executor";
-import { resolveAgentIntent } from "./intent";
 import { loadTodayAttention } from "./today-attention-tool";
 import { loadReconciliationReview } from "./reconciliation-review-tool";
 import { loadDebtOverview } from "./debt-overview-tool";
 import { loadReconciliationLookup } from "./reconciliation-lookup-tool";
 import { loadOrganizationLookup } from "./organization-lookup-tool";
 import { AGENT_MESSAGE_MAX_LENGTH, AGENT_TITLE_MAX_LENGTH } from "./contracts";
-
-const SAFE_ERROR = "No pude completar esta consulta.";
-const UNAVAILABLE = "Esta consulta todavía no está disponible en ConcilIA Agent.";
+import { createOpenAIAgentProvider } from "./model-provider";
+import { boundedConversationContext, orchestrateAgentTurn } from "./orchestration";
 
 export class AgentAccessError extends Error {
   constructor() { super("Recurso no disponible."); this.name = "AgentAccessError"; }
@@ -96,34 +94,35 @@ export async function getAgentConversation(administratorId: string, conversation
   return dto(row);
 }
 
-async function responseFor(message: string, tx: Prisma.TransactionClient, administratorId: string, organizationId: string): Promise<AgentResponse> {
-  const intent = resolveAgentIntent(message);
-  if (!intent) return { message: UNAVAILABLE, capability: null };
-  try {
-    return await executeAgentCapability(intent.capability, intent.input, {
+async function executeOperationalCapability(capability: Parameters<typeof executeAgentCapability>[0], input: Parameters<typeof executeAgentCapability>[1], administratorId: string, organizationId: string): Promise<AgentResponse> {
+  return prisma.$transaction((tx) => executeAgentCapability(capability, input, {
       todayAttention: () => loadTodayAttention(tx, administratorId, organizationId),
       reconciliationReview: () => loadReconciliationReview(tx, administratorId, organizationId),
       debtOverview: () => loadDebtOverview(tx, administratorId),
       reconciliationLookup: (input) => loadReconciliationLookup(tx, administratorId, organizationId, input),
       organizationLookup: (query) => loadOrganizationLookup(tx, administratorId, query),
-    });
-  } catch {
-    return { message: SAFE_ERROR, capability: intent.capability };
-  }
+  }));
 }
 
 export async function sendAgentMessage(administratorId: string, conversationId: string, content: string) {
   const message = validatedMessage(content);
-  return prisma.$transaction(async (tx) => {
+  const prepared = await prisma.$transaction(async (tx) => {
     const conversation = await tx.agentConversation.findFirst({
       where: { id: conversationId, administratorId, status: "ACTIVE", administrator: { deletedAt: null }, organization: { status: "ACTIVE", deletedAt: null, administrators: { some: { administratorId } } } },
-      select: { id: true, organizationId: true, title: true },
+      select: { id: true, organizationId: true, title: true, messages: { select: { role: true, content: true }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 8 } },
     });
     if (!conversation) throw new AgentAccessError();
     await tx.agentMessage.create({ data: { conversationId, organizationId: conversation.organizationId, role: "USER", content: message } });
-    const response = await responseFor(message, tx, administratorId, conversation.organizationId);
-    await tx.agentMessage.create({ data: { conversationId, organizationId: conversation.organizationId, role: "ASSISTANT", content: response.message } });
-    await tx.agentConversation.update({ where: { id: conversationId }, data: { title: conversation.title ?? message.slice(0, AGENT_TITLE_MAX_LENGTH), updatedAt: new Date() } });
+    return { organizationId: conversation.organizationId, title: conversation.title, history: boundedConversationContext([...(conversation.messages ?? [])].reverse()) };
+  });
+  const response = await orchestrateAgentTurn(
+    { message, history: prepared.history },
+    createOpenAIAgentProvider(),
+    (capability, input) => executeOperationalCapability(capability, input, administratorId, prepared.organizationId),
+  );
+  return prisma.$transaction(async (tx) => {
+    await tx.agentMessage.create({ data: { conversationId, organizationId: prepared.organizationId, role: "ASSISTANT", content: response.message } });
+    await tx.agentConversation.update({ where: { id: conversationId }, data: { title: prepared.title ?? message.slice(0, AGENT_TITLE_MAX_LENGTH), updatedAt: new Date() } });
     const updated = await tx.agentConversation.findFirst({ where: { id: conversationId, administratorId }, select: conversationSelect });
     if (!updated) throw new AgentAccessError();
     return { conversation: dto(updated), response };

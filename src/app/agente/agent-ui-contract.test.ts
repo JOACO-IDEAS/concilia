@@ -12,6 +12,7 @@ describe("ConcilIA Agent route and UX contract", () => {
 
   it("has truthful empty state suggestions for real capabilities", () => {
     expect(workspace).toContain("¿Qué necesitás resolver?");
+    expect(workspace).toContain("Preguntá con tus propias palabras");
     expect(workspace).toContain("¿Qué pagos necesitan revisión?");
     expect(workspace).toContain("¿Dónde tengo mayor mora?");
     expect(workspace).not.toMatch(/documentos|factura/i);
