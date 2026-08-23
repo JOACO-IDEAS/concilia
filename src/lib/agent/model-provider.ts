@@ -1,7 +1,10 @@
 import "server-only";
 import { getModelExposedCapabilities, type AgentCapabilityName } from "./capability-registry";
 
-export const AGENT_MODEL_TIMEOUT_MS = 8_000;
+// Una selección estructurada puede incluir razonamiento de tool choice antes
+// del primer byte. 8s resultó insuficiente en el smoke live controlado; 15s
+// conserva un límite estricto sin convertir fallos transitorios en requests colgadas.
+export const AGENT_MODEL_TIMEOUT_MS = 15_000;
 export const AGENT_MODEL_MAX_OUTPUT_TOKENS = 300;
 export const AGENT_CONTEXT_MESSAGES = 8;
 export const AGENT_CONTEXT_CHARACTERS = 8_000;

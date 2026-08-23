@@ -14,7 +14,7 @@ describe("OpenAI AgentModelProvider", () => {
     const [url, options] = fetcher.mock.calls[0]; const body = JSON.parse(options.body);
     expect(url).toBe("https://api.openai.com/v1/responses"); expect(body).toMatchObject({ model: "test-model", store: false, max_output_tokens: AGENT_MODEL_MAX_OUTPUT_TOKENS, parallel_tool_calls: false });
     expect(body.tools).toHaveLength(5); expect(body.tools.every((tool: { type: string }) => tool.type === "function")).toBe(true);
-    expect(JSON.stringify(body)).not.toContain("DATABASE_URL"); expect(AGENT_MODEL_TIMEOUT_MS).toBe(8000);
+    expect(JSON.stringify(body)).not.toContain("DATABASE_URL"); expect(AGENT_MODEL_TIMEOUT_MS).toBe(15000);
   });
 
   it("surfaces provider errors/timeouts safely without logging payloads", async () => {
