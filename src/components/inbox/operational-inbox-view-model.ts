@@ -320,6 +320,7 @@ export function buildOperationalInboxViewModel(
     nextStep: buildNextStep(reviewQueueAvailable, reviewItems, data),
     setupJourney: buildSetupJourney(data, firstReviewableStatus, firstReviewableCaseHref),
     quickActions: [
+      { label: "Preguntarle al Agente", href: "/agente" },
       { label: "Cargar extracto", href: "/conciliacion" },
       { label: "Importar consorcio", href: "/importar" },
       { label: "Gestionar unidades", href: "/unidades-config" },

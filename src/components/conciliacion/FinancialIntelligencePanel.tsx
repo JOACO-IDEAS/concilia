@@ -58,7 +58,7 @@ export function FinancialIntelligencePanel({ intelligence }: { intelligence: Rec
           <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-h-0">Ver evidencia completa</summary>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[420px] text-left text-xs">
-              <thead className="text-slate-500"><tr><th className="pb-2 pr-4">Unidad</th><th className="pb-2 pr-4">Score financiero</th><th className="pb-2 pr-4">Aporte histórico</th><th className="pb-2">Score de decisión</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="pb-2 pr-4">Unidad</th><th className="pb-2 pr-4">Puntaje financiero</th><th className="pb-2 pr-4">Aporte histórico</th><th className="pb-2">Puntaje de decisión</th></tr></thead>
               <tbody>{intelligence.candidates.map((candidate) => <tr key={candidate.unitId} className="border-t border-slate-100"><td className="py-2 pr-4 font-medium">{candidate.unitCode}</td><td className="py-2 pr-4">{candidate.financialScore}</td><td className="py-2 pr-4">{candidate.historicalContribution}</td><td className="py-2">{candidate.decisionScore}</td></tr>)}</tbody>
             </table>
           </div>

@@ -15,7 +15,10 @@ describe("ConcilIA Agent route and UX contract", () => {
     expect(workspace).toContain("Preguntá con tus propias palabras");
     expect(workspace).toContain("¿Qué pagos necesitan revisión?");
     expect(workspace).toContain("¿Dónde tengo mayor mora?");
-    expect(workspace).not.toMatch(/documentos|factura/i);
+  });
+
+  it("TASK 5.3D.1 — DOCUMENT_LOOKUP ya es una capability AVAILABLE real: el empty state puede sugerirla honestamente", () => {
+    expect(workspace).toContain("Buscame una factura o comprobante.");
   });
 
   it("renders bounded structured cards with safe product links", () => {
@@ -41,6 +44,10 @@ describe("ConcilIA Agent route and UX contract", () => {
     expect(workspace).toContain("lg:flex");
     expect(workspace).toContain("min-h-11");
     expect(workspace).toContain("h-11 w-11");
+  });
+
+  it("TASK 5.3D.1 — marca la conversación activa con aria-current, igual que el Sidebar marca la ruta activa", () => {
+    expect(workspace).toContain('aria-current={activeId === conversation.id ? "true" : undefined}');
   });
 
   it("renders message content as escaped React text, not HTML", () => {

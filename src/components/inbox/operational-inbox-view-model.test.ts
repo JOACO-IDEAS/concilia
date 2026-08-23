@@ -293,7 +293,12 @@ describe("hasContradictoryEmptyActivity — invariante de consistencia (UX.3.1 s
 describe("buildOperationalInboxViewModel — accesos rápidos y morosidad", () => {
   it("solo incluye rutas reales y funcionales, ninguna hardcodeada como fetch dinámico", () => {
     const vm = buildVm(baseData);
-    expect(vm.quickActions.map((a) => a.href)).toEqual(["/conciliacion", "/importar", "/unidades-config"]);
+    expect(vm.quickActions.map((a) => a.href)).toEqual(["/agente", "/conciliacion", "/importar", "/unidades-config"]);
+  });
+
+  it("TASK 5.3D.1 — el acceso al Agente va primero: es la vía alternativa a toda la operación, no un accesorio más", () => {
+    const vm = buildVm(baseData);
+    expect(vm.quickActions[0]).toEqual({ label: "Preguntarle al Agente", href: "/agente" });
   });
 
   it("morosidad es un enlace de salida, nunca datos ni CTA de WhatsApp inline", () => {

@@ -27,4 +27,12 @@ describe("FinancialIntelligencePanel", () => {
     expect(html).toContain("Requiere revisión");
     expect(html).toContain("La evidencia actual y el historial no coinciden");
   });
+
+  it("TASK 5.3D.1 — el disclosure técnico usa 'Puntaje', no el anglicismo 'Score'", () => {
+    const html = renderToStaticMarkup(<FinancialIntelligencePanel intelligence={intelligence} />);
+    expect(html).toContain("Puntaje financiero");
+    expect(html).toContain("Puntaje de decisión");
+    expect(html).not.toContain("Score financiero");
+    expect(html).not.toContain("Score de decisión");
+  });
 });
