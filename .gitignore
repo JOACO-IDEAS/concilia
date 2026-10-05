@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/test-results/
 
 # next.js
 /.next/
@@ -22,7 +23,12 @@
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+*.key
+*.p12
+*.pfx
+*.log
 
 # debug
 npm-debug.log*
@@ -50,3 +56,13 @@ next-env.d.ts
 **/.omc/**
 /.windsurf/
 skills-lock.json
+
+# local databases, reports, screenshots, and private working artifacts
+*.sqlite
+*.sqlite3
+*.db
+/reports/
+/screenshots/
+/tmp/
+/temp/
+/.codex/

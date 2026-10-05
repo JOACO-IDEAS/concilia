@@ -1,5 +1,7 @@
 # ConcilIA — Checkpoint integral 4.3A
 
+> Historical snapshot. This file preserves the state observed at checkpoint 4.3A; it is not authoritative for current production, migration, or release status. Start with `docs/CURRENT_STATE.md` and `docs/TECHNICAL_HANDOFF.md`.
+
 ## Alcance
 
 Este checkpoint consolida el estado funcional acumulado de producto SaaS,

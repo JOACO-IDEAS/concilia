@@ -2,15 +2,21 @@
   "name": "app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "npm run test:offline",
     "test:offline": "tsx scripts/test-safety/verify-offline-suite.mts && vitest run --config vitest.offline.config.mts",
     "test:fixtures": "vitest run --config vitest.fixtures.config.mts",
     "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
